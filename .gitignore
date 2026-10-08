@@ -3,3 +3,7 @@
 *.iml
 *.ipr
 *.iws
+**/bin/
+**/obj/
+.dotnet/
+artifacts/

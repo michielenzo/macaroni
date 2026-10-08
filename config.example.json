@@ -1,0 +1,38 @@
+{
+  // Edit %LOCALAPPDATA%/Macaroni/config.json while Macaroni runs.
+  "version": 1,
+  "terminal": "wt.exe",
+  "terminalProcess": "WindowsTerminal",
+  "terminalArguments": ["-w", "new"],
+  "mappings": {
+    "9": {
+      "action": "application",
+      "executable": "wt.exe",
+      "process": "WindowsTerminal",
+      "arguments": ["-w", "new"],
+      "selection": "recent",
+      "monitor": 1,
+      "size": "maximize"
+    },
+    "8": {
+      "action": "folder",
+      "path": "%USERPROFILE%",
+      "monitor": 1,
+      "size": "maximize"
+    },
+    "7": {
+      "action": "command",
+      "executable": "powershell.exe",
+      "arguments": ["-NoExit", "-Command", "Get-Date"],
+      "mode": "terminal",
+      "monitor": 1,
+      "size": "preserve"
+    },
+    "6": {
+      "action": "command",
+      "executable": "powershell.exe",
+      "arguments": ["-NoProfile", "-Command", "Set-Content -LiteralPath $env:TEMP\\macaroni-example.txt -Value (Get-Date)"],
+      "mode": "hidden"
+    }
+  }
+}
