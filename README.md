@@ -57,41 +57,13 @@ With Num Lock off, numpad 1–9 perform configurable actions. Numpad 0 enables/d
 
 ## Features
 
-Open **configuration** from the tray to edit `%LOCALAPPDATA%\Macaroni\config.json`. It accepts JSON comments and trailing commas. Changes are watched and applied after a short debounce; invalid changes retain the last working configuration and show a notification. On first launch with invalid configuration, no action mappings are enabled until corrected.
+Macaroni opens or focuses applications, reuses Explorer windows for folders, and runs commands either hidden or in a configurable terminal. Each shortcut chooses a monitor and window sizing behavior.
 
-See `config.example.json` for ready-to-use examples. Keys 1–9 are optional; unmapped keys retain normal behavior. Key 0 is always reserved while Num Lock is off. Modifier keys do not opt out of remapping. Physical numpad scan codes are used; injected input is ignored.
+**See the [Configuration guide](CONFIGURATION.md) for every keyword, defaults, complete examples, window-selection strategies, monitor numbering, and troubleshooting.** The guide includes Windows Terminal, Chrome, ChatGPT, and tag-watch examples. The [example configuration](config.example.json) is the first-run template.
 
-### Mapping fields
+Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; invalid edits keep the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
 
-| Field | Meaning |
-| --- | --- |
-| `action` | `application`, `folder`, or `command` |
-| `executable` | Executable path or name; required for applications and commands |
-| `arguments` | Array of separate arguments, without shell escaping |
-| `process` | Actual window-owning process name, e.g. `WindowsTerminal`; required for applications |
-| `selection` | `recent` (default), `title`, or `dedicated` |
-| `title` | Case-sensitive full window title for `title` selection |
-| `path` | Existing filesystem directory for folder actions |
-| `workingDirectory` | Optional launch working directory |
-| `monitor` | Windows display number, default 1 |
-| `size` | `maximize` (default) or `preserve` |
-| `mode` | Command mode: `hidden` (default) or `terminal` |
-
-Environment variables such as `%USERPROFILE%` expand in paths, executables, and arguments. Commands are executed directly; for shell syntax, explicitly configure `powershell.exe` or `cmd.exe` and their arguments. Hidden mode suppresses console creation; a graphical executable may still open its own UI. Commands execute once per press, not once per key-repeat.
-
-Application actions reuse a suitable window or launch the configured executable. Exact-title matching is scoped to the process. Multiple matches use the most recently focused window since Macaroni started, with window enumeration order as the initial fallback.
-
-Dedicated mode remembers a separate window for each mapping during this Macaroni session. Configure arguments that create a new window, e.g. `wt.exe` with `["-w", "new"]`. It intentionally fails with a timeout if an application only reuses an existing window. Restarting Macaroni or changing that mapping starts a new dedicated association; existing application windows are never closed.
-
-Folder actions compare normalized filesystem paths against Explorer's Shell automation windows. Existing matching windows are reused. Hidden/inactive Explorer tabs vary by Windows version and are not guaranteed to be exposed or selected through this interface; use separate Explorer windows for reliable folder shortcuts.
-
-Every window action restores a minimized window, centers it on the configured display, applies sizing, and requests focus. `preserve` uses the restored window dimensions, clamped to fit the destination work area. Display numbers come from Windows display device names, not array indexes. A missing target falls back to the closest lower number, or the lowest available number if none is lower.
-
-For terminal commands, configure top-level `terminal`, `terminalProcess`, and `terminalArguments`. Defaults use Windows Terminal. Arguments must create a new window and accept an executable followed by arguments. Another terminal with different CLI conventions needs suitable arguments; its actual window process must match `terminalProcess`. Hidden commands have no placement step.
-
-The tray supports enable/disable, configuration reload, startup registration, logs, and exit. Enabled state is stored separately from configuration. Launch failures, timeouts, invalid configuration, and focus errors appear as tray notifications and in `macaroni.log`.
-
-Windows may deny focus or placement across privilege boundaries. Macaroni reports the failure; it does not elevate itself. Slow applications have a 15-second window-discovery timeout. Repeated presses while the same mapping is still launching are ignored.
+The tray also provides manual configuration reload, startup at sign-in, logs, and exit. A window already maximized on its configured monitor is simply focused without another maximize animation.
 
 ## Architecture
 
