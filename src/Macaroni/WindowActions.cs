@@ -8,7 +8,7 @@ namespace Macaroni;
 internal sealed class WindowActions : IDisposable
 {
     private readonly Dictionary<nint, long> recent = new();
-    private readonly Dictionary<string, (nint Handle, uint Pid, long Started)> dedicated = new();
+    private readonly DedicatedWindows dedicated = new();
     private readonly HashSet<string> busy = new();
     private readonly Native.EventProc foregroundCallback;
     private readonly nint foregroundHook;
@@ -62,17 +62,8 @@ internal sealed class WindowActions : IDisposable
                 target = Find(mapping, identity);
                 if (target == 0)
                 {
-                    var before = Candidates(mapping).ToHashSet();
                     using var process = Process.Start(StartInfo(mapping.Executable, mapping.Arguments, mapping.WorkingDirectory));
-                    target = await WaitFor(() => mapping.Selection == "dedicated"
-                        ? Candidates(mapping).FirstOrDefault(w => !before.Contains(w))
-                        : Find(mapping, identity));
-                    if (mapping.Selection == "dedicated")
-                    {
-                        Native.GetWindowThreadProcessId(target, out var pid);
-                        using var owner = Process.GetProcessById((int)pid);
-                        dedicated[identity] = (target, pid, owner.StartTime.ToUniversalTime().Ticks);
-                    }
+                    target = await WaitFor(() => Find(mapping, identity));
                 }
             }
             await Place(target, mapping, config);
@@ -90,17 +81,21 @@ internal sealed class WindowActions : IDisposable
     {
         if (mapping.Selection == "dedicated")
         {
-            if (dedicated.TryGetValue(identity, out var tracked) && Native.IsWindow(tracked.Handle))
+            var available = new List<WindowCandidate>();
+            foreach (var window in Candidates(mapping))
             {
                 try
                 {
-                    Native.GetWindowThreadProcessId(tracked.Handle, out var pid);
+                    Native.GetWindowThreadProcessId(window, out var pid);
                     using var owner = Process.GetProcessById((int)pid);
-                    if (pid == tracked.Pid && owner.StartTime.ToUniversalTime().Ticks == tracked.Started) return tracked.Handle;
+                    available.Add(new(window, pid, owner.StartTime.ToUniversalTime().Ticks, recent.GetValueOrDefault(window)));
                 }
+                // A candidate may close while its process identity is read.
                 catch (ArgumentException) { }
+                catch (InvalidOperationException) { }
+                catch (System.ComponentModel.Win32Exception) { }
             }
-            return 0;
+            return dedicated.Select(identity, available);
         }
         return Candidates(mapping).Where(w => mapping.Selection != "title" || Title(w) == mapping.Title)
             .OrderByDescending(w => recent.GetValueOrDefault(w)).FirstOrDefault();

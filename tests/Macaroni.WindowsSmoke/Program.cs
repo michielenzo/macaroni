@@ -35,6 +35,21 @@ internal static class Program
             timer.Stop();
             try
             {
+                if (args.Contains("--adopt-terminal"))
+                {
+                    var config = Configuration.Parse(File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json")));
+                    var mapping = config.Mappings["7"];
+                    if (mapping.Process != "WindowsTerminal" || mapping.Selection != "dedicated") throw new Exception("Expected key 7 to be a dedicated Windows Terminal mapping.");
+                    var before = TerminalWindows();
+                    if (before.Count == 0) throw new Exception("Open a terminal first; this check must not launch one.");
+                    using var actions = new WindowActions();
+                    await actions.Execute("7", mapping, config);
+                    var adopted = Native.GetForegroundWindow();
+                    if (!before.Contains(adopted) || !before.SetEquals(TerminalWindows())) throw new Exception("Dedicated action did not adopt an existing terminal without launching another.");
+                    await actions.Execute("7", mapping, config);
+                    if (Native.GetForegroundWindow() != adopted || !before.SetEquals(TerminalWindows())) throw new Exception("Dedicated selection did not remain on the adopted terminal.");
+                    Console.WriteLine("PASS: dedicated key 7 adopts and reuses an existing terminal without opening another window");
+                }
                 if (args.Contains("--place-chrome"))
                 {
                     var config = Configuration.Parse(File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json")));
@@ -72,5 +87,17 @@ internal static class Program
         timer.Start();
         Application.Run();
         Console.WriteLine("PASS: Windows message loop completed");
+    }
+    private static HashSet<nint> TerminalWindows()
+    {
+        var ids = System.Diagnostics.Process.GetProcessesByName("WindowsTerminal").Select(p => { using (p) return (uint)p.Id; }).ToHashSet();
+        var windows = new HashSet<nint>();
+        Native.EnumWindows((window, _) =>
+        {
+            Native.GetWindowThreadProcessId(window, out uint pid);
+            if (Native.IsWindowVisible(window) && ids.Contains(pid)) windows.Add(window);
+            return true;
+        }, 0);
+        return windows;
     }
 }

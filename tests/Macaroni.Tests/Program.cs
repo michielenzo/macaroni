@@ -13,6 +13,19 @@ void Reject(string name, string json)
     Check(name, false);
 }
 var assignments = new Dictionary<string, string> { ["1"] = "laptop", ["2"] = "external-right", ["3"] = "external-left" };
+var dedicated = new DedicatedWindows();
+var firstWindow = new WindowCandidate(11, 101, 1001, 10);
+var secondWindow = new WindowCandidate(22, 102, 1002, 20);
+Check("Dedicated adopts sole existing window", dedicated.Select("7", [firstWindow]) == 11);
+Check("Dedicated stays on adopted window despite newer focus", dedicated.Select("7", [firstWindow, secondWindow]) == 11);
+Check("Closed dedicated window adopts remaining window", dedicated.Select("7", [secondWindow]) == 22);
+var thirdWindow = new WindowCandidate(33, 103, 1003, 30);
+Check("Closed dedicated chooses most recently used replacement", dedicated.Select("7", [firstWindow, thirdWindow]) == 33);
+Check("Adopted replacement remains dedicated", dedicated.Select("7", [firstWindow with { LastFocused = 99 }, thirdWindow]) == 33);
+Check("No dedicated candidate requests launch", dedicated.Select("7", []) == 0);
+Check("Newly launched window becomes dedicated", dedicated.Select("7", [secondWindow]) == 22);
+Check("Recycled handle with another process is not treated as tracked", dedicated.Select("7", [secondWindow with { Pid = 104, Started = 1004 }, thirdWindow]) == 33);
+Check("Fresh session adopts most recently used existing window", new DedicatedWindows().Select("7", [firstWindow, secondWindow]) == 22);
 var numbered = MonitorAssignments.NumberPaths(["DISPLAY1", "DISPLAY21", "DISPLAY22"]);
 Check("Windows path 2 is display 21, not fallback to display 1", numbered[2] == "DISPLAY21");
 numbered = MonitorAssignments.NumberPaths(["DISPLAY1", "DISPLAY22", "DISPLAY21"]);

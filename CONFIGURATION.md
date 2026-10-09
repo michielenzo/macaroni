@@ -69,7 +69,7 @@ This is a whole configuration file. Adjust the Chrome path and folder to match y
 }
 ```
 
-Here, **4** opens or focuses the most recently used Chrome window on monitor 2, **7** creates and reuses a dedicated Terminal window on monitor 1, and **9** opens or reuses Documents in Explorer.
+Here, **4** opens or focuses the most recently used Chrome window on monitor 2, **7** adopts or launches a Terminal window and keeps it dedicated on monitor 1, and **9** opens or reuses Documents in Explorer.
 
 ## File format and keys
 
@@ -214,11 +214,11 @@ Terminal settings or switching tabs may affect the window's displayed title. Che
 
 ### `dedicated`
 
-Create a separate window on first use and reuse that window on subsequent presses. Existing windows of that application are not adopted on first use. Closing the tracked window causes the next press to launch another one.
+Keep using one chosen window until it closes. On first use, or if the tracked window has closed, adopt an existing window belonging to the configured process. If only one exists, use it; if several exist, choose the most recently focused one. When no focus history is available, window enumeration order is the fallback. Launch a new window only if no suitable existing window is available.
 
-Set launch arguments that really create a **new window**, such as `["-w", "new"]` for Windows Terminal. If an app only activates an existing window, dedicated mode cannot claim it and times out.
+Once adopted, that window remains dedicated even if you focus another window of the same application. Launch arguments such as `["-w", "new"]` for Windows Terminal are used only when a launch is necessary. `title` is ignored in this mode; matching is scoped to `process`.
 
-The association is kept in memory for the current Macaroni session. Restarting Macaroni loses it. Changing any setting in that mapping gives it a new association; a subsequent press may create another window. Existing application windows are never closed by Macaroni. `title` is ignored in this mode.
+The association is kept in memory for the current Macaroni session. After restarting Macaroni or changing the mapping, the next press adopts an available window again. Existing application windows are never closed by Macaroni.
 
 ## Opening folders
 
@@ -402,9 +402,9 @@ Use **Open logs** in the tray to open the settings folder, then read `macaroni.l
 | Navigation occurs instead of an action | Enable Macaroni with numpad 0 or the tray; check the key is mapped and the file loaded successfully. |
 | Saved edits have no effect | Edit the active `config.json`, check JSON syntax and keyword spelling, then use **Reload configuration**. |
 | App runs but is never found | Verify the actual window-owning `process`, not just the launcher's name. |
-| No matching window after 15 seconds | Check `process`, exact `title`, new-window arguments for dedicated mode, or whether the application starts too slowly. |
+| No matching window after 15 seconds | Check `process`, exact `title`, launch arguments, or whether the application starts too slowly. |
 | Title mode keeps launching windows | The existing window title does not exactly match; changing tabs/documents may change it. |
-| Dedicated mode creates another window after restart | Its association lasts only for the current Macaroni session. |
+| Dedicated mode opens another window | No eligible window was found for the configured process. Check `process`; after restart or closure, existing windows should be adopted. |
 | Folder shortcut opens another Explorer window | Check the path; an existing match may be in an inaccessible inactive tab. |
 | Window goes to another monitor | Check `windowsNumbers` in **Show monitor identities** and the fallback rule. Remove `monitors` overrides if you want automatic Windows numbering. |
 | Window moves but does not focus | Try with modifier keys released; Windows can still restrict activation, including across privilege boundaries. |

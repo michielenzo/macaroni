@@ -44,7 +44,7 @@ To uninstall, turn off **Start with Windows**, exit from the tray, and remove th
 - Disable with 0 or the tray: navigation works; 0 re-enables. Restart and confirm state is remembered.
 - Move/minimize a target, press its mapping, and confirm placement and focus.
 - Press a maximize mapping again while its window is already maximized on the target display: only focus changes, with no restore/maximize animation. Move it to another display and confirm the shortcut still brings it back.
-- Test title/recent/dedicated modes with several windows. Test dedicated launch arguments that create a genuinely separate window.
+- Test title/recent/dedicated modes with several windows. Dedicated mode should adopt an existing window, stay with it despite focus changes, and adopt another when it closes; launch only when none remain.
 - Disconnect monitors and test fallback, different DPI scales, and a laptop-only session.
 - Edit config, save via an editor that replaces the file, and confirm reload. Introduce invalid JSON and confirm existing mappings still work.
 - Test both command modes, missing executables, invalid paths, and application launch timeouts.
