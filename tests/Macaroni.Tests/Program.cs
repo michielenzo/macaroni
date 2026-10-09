@@ -12,6 +12,22 @@ void Reject(string name, string json)
     catch { Check(name, true); return; }
     Check(name, false);
 }
+var assignments = new Dictionary<string, string> { ["1"] = "laptop", ["2"] = "external-right", ["3"] = "external-left" };
+var numbered = MonitorAssignments.NumberPaths(["DISPLAY1", "DISPLAY21", "DISPLAY22"]);
+Check("Windows path 2 is display 21, not fallback to display 1", numbered[2] == "DISPLAY21");
+numbered = MonitorAssignments.NumberPaths(["DISPLAY1", "DISPLAY22", "DISPLAY21"]);
+Check("Numbering follows updated Windows path order", numbered[2] == "DISPLAY22");
+numbered = MonitorAssignments.NumberPaths(["DISPLAY1", "DISPLAY21"]);
+Check("Disconnected Windows path falls back to remaining number", Configuration.ResolveMonitor(3, numbered.Keys) == 2);
+var displays = MonitorAssignments.Available(assignments, ["external-left", "LAPTOP", "external-right"]);
+Check("Logical monitor 2 uses its identity, independent of enumeration order", displays[2] == "external-right");
+displays = MonitorAssignments.Available(assignments, ["external-left", "laptop"]);
+Check("Disconnected assigned monitor falls back to closest lower", Configuration.ResolveMonitor(2, displays.Keys) == 1);
+displays = MonitorAssignments.Available(assignments, ["external-left"]);
+Check("Assigned monitor fallback when none lower", Configuration.ResolveMonitor(2, displays.Keys) == 3);
+Check("Unknown physical monitor cannot silently impersonate an assigned number", MonitorAssignments.Available(assignments, ["unknown"]).Count == 0);
+Reject("Duplicate physical monitor identities", """{"monitors":{"1":"screen-a","2":"SCREEN-A"}}""");
+Reject("Invalid assigned number", """{"monitors":{"0":"screen-a"}}""");
 Check("Exact monitor", Configuration.ResolveMonitor(3, [1, 3, 5]) == 3);
 Check("Closest lower monitor", Configuration.ResolveMonitor(4, [1, 3, 5]) == 3);
 Check("Lowest monitor when none lower", Configuration.ResolveMonitor(1, [3, 5]) == 3);

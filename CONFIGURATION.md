@@ -95,6 +95,7 @@ These belong outside `mappings`, next to it in the outermost object.
 | --- | --- | --- | --- |
 | `version` | Integer | `1` | Configuration format version. Only `1` is supported. |
 | `mappings` | Object | `{}` | Numbered entries defining your shortcuts. |
+| `monitors` | Object | `{}` | Optional physical-monitor overrides. Leave empty or omit to follow Windows Settings numbering automatically. |
 | `terminal` | String | `"wt.exe"` | Terminal executable used by commands with `"mode": "terminal"`. |
 | `terminalProcess` | String | `"WindowsTerminal"` | Process that owns the newly opened terminal window. |
 | `terminalArguments` | Array of strings | `["-w", "new"]` | Arguments sent to that terminal before the command executable and its arguments. |
@@ -314,17 +315,35 @@ To use another terminal, configure its executable, the process owning its window
 
 Supply a positive integer. The default is `1`.
 
-The current implementation uses the numeric suffix of the Windows display device name: `\\.\DISPLAY2` means `2`. It does not use the display's position in a list. These device numbers can be nonconsecutive and should not be assumed to match the labels shown by Windows Settings' Identify feature.
+By default, `monitor` follows Windows' active display-path numbering, using the same approach documented by [Microsoft PowerToys Power Display](https://github.com/microsoft/PowerToys/blob/main/doc/devdocs/modules/powerdisplay/design.md#monitor-identification-handles-ids-and-names). Macaroni reads the current topology every time a shortcut runs. It does not infer display numbers from screen position, primary status, or the suffix of a `DISPLAY` device name.
 
-To inspect the numbers Macaroni uses, run this in Windows PowerShell:
+Leave the top-level `monitors` setting empty or omit it for this behavior. Rearranging a display from right to left changes its position, not the meaning of the configured number. If Windows changes its display-path numbering after a connection change, the next shortcut uses that new numbering. The current three-display setup has been verified against Windows Settings; mirrored displays share a desktop area and cannot act as independent window destinations.
 
-```powershell
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Screen]::AllScreens |
-    Select-Object DeviceName, Primary, Bounds, WorkingArea
+Use **Show monitor identities** in the tray to inspect `windowsNumbers`, device names, current screen positions, and physical identities. If the requested number is unavailable, Macaroni uses the closest lower available number, or the lowest available number if none is lower. A failed topology query reports an error instead of guessing from internal device names.
+
+#### Optional physical-monitor overrides
+
+Only configure `monitors` if you intentionally want a number to stay attached to a particular physical monitor instead of following Windows numbering. A nonempty object switches selection to these explicit assignments. To set them:
+
+1. Use **Show monitor identities** in the tray. It opens a diagnostic `monitors.json` containing each screen's device name, position (`bounds`), primary status, and identity. This report does not change configuration.
+2. Match each screen's position to the layout in Windows Display Settings. Use **Identify** there if needed.
+3. Copy each complete `identity` JSON string, including its escaped backslashes, into a top-level `monitors` object in your active `config.json`. Choose the numbers to correspond to your Windows Settings layout.
+
+This illustrates the structure; replace the placeholder strings with identities from your report:
+
+```json
+{
+  "monitors": {
+    "1": "COPY-LAPTOP-IDENTITY-HERE",
+    "2": "COPY-SECOND-DISPLAY-IDENTITY-HERE",
+    "3": "COPY-THIRD-DISPLAY-IDENTITY-HERE"
+  }
+}
 ```
 
-If the requested display is missing, Macaroni chooses the closest lower available number. If none is lower, it uses the lowest available number:
+Each number must be a positive integer written as a string, and each identity can have only one number. Include all displays you want to use as destinations or fallbacks. Identities are matched without case sensitivity. These are explicit assignments, not an automatic lookup of Windows Settings' labels. A different connection port, driver change, or replacement display may change an identity; regenerate the report and update the assignment if necessary.
+
+With assignments configured, only connected, assigned displays participate in selection. If the requested display is missing, Macaroni chooses the closest lower available assigned number. If none is lower, it uses the lowest available assigned number:
 
 | Available numbers | Requested | Used |
 | --- | --- | --- |
@@ -333,7 +352,9 @@ If the requested display is missing, Macaroni chooses the closest lower availabl
 | 1, 3, 5 | 4 | 3 |
 | 3, 5 | 1 | 3 |
 
-Connected displays are checked when the shortcut runs, so fallback also applies after disconnecting a monitor. If a shortcut appears on an unexpected display, check device names before changing the mapping.
+Connected displays are checked when the shortcut runs, so fallback also applies after disconnecting a monitor. If no assigned display is connected, Macaroni reports an error instead of moving a window to an arbitrary destination.
+
+Earlier builds used the numeric suffix of a GDI device name or required manual assignments. The default now uses live Windows display-path numbering. Remove an old `monitors` object to use the automatic behavior.
 
 ### `size`
 
@@ -385,7 +406,7 @@ Use **Open logs** in the tray to open the settings folder, then read `macaroni.l
 | Title mode keeps launching windows | The existing window title does not exactly match; changing tabs/documents may change it. |
 | Dedicated mode creates another window after restart | Its association lasts only for the current Macaroni session. |
 | Folder shortcut opens another Explorer window | Check the path; an existing match may be in an inaccessible inactive tab. |
-| Window goes to another monitor | Check Windows device numbers and the lower-number fallback rule. |
+| Window goes to another monitor | Check `windowsNumbers` in **Show monitor identities** and the fallback rule. Remove `monitors` overrides if you want automatic Windows numbering. |
 | Window moves but does not focus | Try with modifier keys released; Windows can still restrict activation, including across privilege boundaries. |
 | Hidden command appears to do nothing | Run it in terminal mode and check shell/profile requirements. Macaroni does not collect command output. |
 | A setting from another example is rejected | Only the keywords in this guide are supported; there is no `enabled`, `hotkey`, `screen`, or `fullscreen` field. |

@@ -7,6 +7,14 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Contains("--monitors"))
+        {
+            foreach (var display in MonitorCatalog.WindowsDisplays())
+                Console.WriteLine($"Windows number {display.Number}: {display.Screen.DeviceName} {display.Screen.Bounds}");
+            foreach (var display in MonitorCatalog.Connected())
+                Console.WriteLine($"{display.Screen.DeviceName} {display.Screen.Bounds}\n{display.Identity}");
+            return;
+        }
         using var dispatcher = new Control();
         _ = dispatcher.Handle;
         // Never intercept user input in a smoke test.
@@ -27,6 +35,18 @@ internal static class Program
             timer.Stop();
             try
             {
+                if (args.Contains("--place-chrome"))
+                {
+                    var config = Configuration.Parse(File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json")));
+                    var mapping = config.Mappings["4"];
+                    if (mapping.Process != "chrome" || mapping.Monitor != 2) throw new Exception("Expected key 4 to select Chrome on monitor 2.");
+                    using var actions = new WindowActions();
+                    await actions.Execute("4", mapping, config);
+                    var actual = Screen.FromHandle(Native.GetForegroundWindow());
+                    var expected = MonitorCatalog.Resolve(2, config);
+                    if (actual.DeviceName != expected.DeviceName) throw new Exception("Chrome is on the wrong monitor.");
+                    Console.WriteLine($"PASS: Chrome focused on assigned monitor 2: {actual.DeviceName} {actual.Bounds}");
+                }
                 if (args.Contains("--focus-terminal"))
                 {
                     var terminalIds = System.Diagnostics.Process.GetProcessesByName("WindowsTerminal")

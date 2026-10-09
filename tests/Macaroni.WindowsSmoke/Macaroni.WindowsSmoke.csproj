@@ -11,5 +11,9 @@
     <Compile Include="../../src/Macaroni/KeyboardHook.cs" Link="KeyboardHook.cs" />
     <Compile Include="../../src/Macaroni/KeyPolicy.cs" Link="KeyPolicy.cs" />
     <Compile Include="../../src/Macaroni/ForegroundActivation.cs" Link="ForegroundActivation.cs" />
+    <Compile Include="../../src/Macaroni/Configuration.cs" Link="Configuration.cs" />
+    <Compile Include="../../src/Macaroni/MonitorAssignments.cs" Link="MonitorAssignments.cs" />
+    <Compile Include="../../src/Macaroni/MonitorCatalog.cs" Link="MonitorCatalog.cs" />
+    <Compile Include="../../src/Macaroni/WindowActions.cs" Link="WindowActions.cs" />
   </ItemGroup>
 </Project>

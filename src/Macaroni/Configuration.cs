@@ -9,11 +9,18 @@ public sealed class Configuration
     public string TerminalProcess { get; set; } = "WindowsTerminal";
     public string[] TerminalArguments { get; set; } = ["-w", "new"];
     public Dictionary<string, Mapping> Mappings { get; set; } = new();
+    public Dictionary<string, string> Monitors { get; set; } = new();
     public static Configuration Parse(string json)
     {
         var config = JsonSerializer.Deserialize<Configuration>(json, JsonOptions) ?? throw new Exception("Empty configuration.");
         if (config.Version != 1 || string.IsNullOrWhiteSpace(config.Terminal) || string.IsNullOrWhiteSpace(config.TerminalProcess) || config.TerminalArguments is null || config.TerminalArguments.Any(a => a is null) || config.Mappings is null)
             throw new Exception("Invalid configuration version, terminal, or mappings.");
+        if (config.Monitors is null) throw new Exception("monitors must be an object.");
+        foreach (var (number, identity) in config.Monitors)
+            if (!int.TryParse(number, out int parsed) || parsed < 1 || number != parsed.ToString() || string.IsNullOrWhiteSpace(identity))
+                throw new Exception("monitors must map positive display numbers to monitor device identities.");
+        if (config.Monitors.Values.Distinct(StringComparer.OrdinalIgnoreCase).Count() != config.Monitors.Count)
+            throw new Exception("Each monitor identity can only have one number.");
         foreach (var (key, m) in config.Mappings)
         {
             if (key.Length != 1 || key[0] < '1' || key[0] > '9' || m is null) throw new Exception("Mappings must use keys 1–9. Key 0 is reserved.");

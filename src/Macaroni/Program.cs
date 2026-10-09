@@ -43,6 +43,7 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add(toggle);
         menu.Items.Add("Open configuration", null, (_, _) => Open(ConfigPath));
         menu.Items.Add("Reload configuration", null, (_, _) => LoadConfiguration());
+        menu.Items.Add("Show monitor identities", null, (_, _) => ShowMonitors());
         menu.Items.Add(startup);
         menu.Items.Add("Open logs", null, (_, _) => Open(directory));
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
@@ -110,6 +111,25 @@ internal sealed class TrayApplication : ApplicationContext
     private void Open(string path)
     {
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose(); }
+        catch (Exception ex) { Report(ex); }
+    }
+    private void ShowMonitors()
+    {
+        try
+        {
+            var numbered = MonitorCatalog.WindowsDisplays();
+            var report = MonitorCatalog.Connected().Select(display => new
+            {
+                windowsNumbers = numbered.Where(n => n.Screen.DeviceName == display.Screen.DeviceName).Select(n => n.Number).ToArray(),
+                deviceName = display.Screen.DeviceName,
+                bounds = display.Screen.Bounds.ToString(),
+                primary = display.Screen.Primary,
+                identity = display.Identity
+            });
+            var path = System.IO.Path.Combine(directory, "monitors.json");
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(report, Configuration.JsonOptions));
+            Open(path);
+        }
         catch (Exception ex) { Report(ex); }
     }
     private void Report(Exception ex)

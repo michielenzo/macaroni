@@ -63,12 +63,13 @@ Macaroni opens or focuses applications, reuses Explorer windows for folders, and
 
 Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; invalid edits keep the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
 
-The tray also provides manual configuration reload, startup at sign-in, logs, and exit. A window already maximized on its configured monitor is simply focused without another maximize animation.
+The tray also provides manual configuration reload, monitor identity diagnostics, startup at sign-in, logs, and exit. Monitor numbers follow the current Windows display-path order automatically; optional physical-monitor overrides are documented in the configuration guide. A window already maximized on its configured monitor is simply focused without another maximize animation.
 
 ## Architecture
 
 - `Program.cs`: tray, single-instance lifetime, configuration watching, state persistence, startup registration.
 - `Configuration.cs`: configuration model, validation, and monitor fallback policy.
+- `MonitorCatalog.cs` / `MonitorAssignments.cs`: physical display identities and explicit monitor-number assignments.
 - `KeyboardHook.cs` / `KeyPolicy.cs`: physical numpad interception and stable press/release suppression.
 - `WindowActions.cs`: process-scoped window matching, foreground history, launch coordination, Explorer COM lookup, placement, and focus.
 - `Native.cs`: Win32 API boundary.

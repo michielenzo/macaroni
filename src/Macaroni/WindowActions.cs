@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Macaroni;
 
@@ -41,7 +40,7 @@ internal sealed class WindowActions : IDisposable
                     var terminal = StartInfo(config.Terminal, config.TerminalArguments.Concat(new[] { Expand(mapping.Executable) }).Concat(mapping.Arguments), mapping.WorkingDirectory);
                     using var process = Process.Start(terminal);
                     var window = await WaitFor(() => AllWindows().FirstOrDefault(w => !before.Contains(w) && IsProcess(w, config.TerminalProcess)));
-                    await Place(window, mapping);
+                    await Place(window, mapping, config);
                 }
                 return;
             }
@@ -76,7 +75,7 @@ internal sealed class WindowActions : IDisposable
                     }
                 }
             }
-            await Place(target, mapping);
+            await Place(target, mapping, config);
         }
         finally { busy.Remove(key); }
     }
@@ -170,11 +169,9 @@ internal sealed class WindowActions : IDisposable
         }
         throw new Exception("No matching window appeared within 15 seconds. Check process, title, and launch arguments; dedicated actions require a new window.");
     }
-    private async Task Place(nint window, Mapping mapping)
+    private async Task Place(nint window, Mapping mapping, Configuration config)
     {
-        var screens = Screen.AllScreens.Select(s => (Screen: s, Number: int.Parse(Regex.Match(s.DeviceName, @"\d+$").Value))).ToArray();
-        int number = Configuration.ResolveMonitor(mapping.Monitor, screens.Select(s => s.Number));
-        var destination = screens.First(s => s.Number == number).Screen;
+        var destination = MonitorCatalog.Resolve(mapping.Monitor, config);
         // Restoring an already-maximized window just to maximize it again
         // causes a visible animation on every shortcut press. Only reposition
         // it when it needs to move to another monitor or change sizing mode.
