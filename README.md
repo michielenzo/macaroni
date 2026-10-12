@@ -63,6 +63,8 @@ Macaroni opens or focuses applications, reuses Explorer windows for folders, and
 
 Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; invalid edits keep the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
 
+To switch a dedicated window, focus the desired application and press **Ctrl + its numpad key** with Num Lock off. You can also use **Dedicated windows → Choose window…** in the tray. Assignment leaves windows in place; the next normal shortcut applies placement.
+
 The tray also provides manual configuration reload, monitor identity diagnostics, startup at sign-in, logs, and exit. Monitor numbers follow the current Windows display-path order automatically; optional physical-monitor overrides are documented in the configuration guide. A window already maximized on its configured monitor is simply focused without another maximize animation.
 
 ## Architecture

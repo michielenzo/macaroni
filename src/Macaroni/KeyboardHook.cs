@@ -9,6 +9,9 @@ internal sealed class KeyboardHook : IDisposable
     private readonly nint hook;
     private readonly KeyPolicy policy = new();
     internal KeyboardHook(Func<int, bool> shouldCapture, Action<int> dispatch)
+        : this((digit, _) => shouldCapture(digit), (digit, _, _) => dispatch(digit)) { }
+
+    internal KeyboardHook(Func<int, bool, bool> shouldCapture, Action<int, bool, nint> dispatch)
     {
         callback = (code, msg, data) =>
         {
@@ -22,8 +25,11 @@ internal sealed class KeyboardHook : IDisposable
                     bool up = msg == 0x101 || msg == 0x105;
                     if (down || up)
                     {
-                        var result = policy.Handle(key.Scan, down, (Native.GetKeyState(0x90) & 1) != 0, shouldCapture(digit));
-                        if (result.Trigger) dispatch(digit);
+                        bool control = (Native.GetAsyncKeyState(0x11) & 0x8000) != 0;
+                        var result = policy.Handle(key.Scan, down, (Native.GetKeyState(0x90) & 1) != 0, shouldCapture(digit, control));
+                        // Snapshot before queuing: the user may release Ctrl or
+                        // switch windows before the tray thread handles it.
+                        if (result.Trigger) dispatch(digit, control, Native.GetForegroundWindow());
                         if (result.Suppress) return 1;
                     }
                 }

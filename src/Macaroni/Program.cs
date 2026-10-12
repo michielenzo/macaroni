@@ -25,6 +25,7 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly NotifyIcon tray;
     private readonly ToolStripMenuItem toggle = new();
     private readonly ToolStripMenuItem startup = new("Start with Windows");
+    private readonly ToolStripMenuItem dedicatedMenu = new("Dedicated windows");
     private readonly System.Windows.Forms.Timer reload = new() { Interval = 350 };
     private readonly FileSystemWatcher watcher;
     private readonly WindowActions actions = new();
@@ -41,6 +42,8 @@ internal sealed class TrayApplication : ApplicationContext
         enabled = !File.Exists(StatePath) || File.ReadAllText(StatePath).Trim() != "false";
         var menu = new ContextMenuStrip();
         menu.Items.Add(toggle);
+        menu.Items.Add(dedicatedMenu);
+        menu.Opening += (_, _) => PopulateDedicatedMenu();
         menu.Items.Add("Open configuration", null, (_, _) => Open(ConfigPath));
         menu.Items.Add("Reload configuration", null, (_, _) => LoadConfiguration());
         menu.Items.Add("Show monitor identities", null, (_, _) => ShowMonitors());
@@ -57,8 +60,8 @@ internal sealed class TrayApplication : ApplicationContext
         watcher = new FileSystemWatcher(directory, "config.json") { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size };
         watcher.Changed += Changed; watcher.Created += Changed; watcher.Deleted += Changed; watcher.Renamed += Changed;
         watcher.EnableRaisingEvents = true;
-        keyboard = new KeyboardHook(d => d == 0 || enabled && configuration.Mappings.ContainsKey(d.ToString()), d =>
-            dispatcher.BeginInvoke((Action)(() => Dispatch(d))));
+        keyboard = new KeyboardHook((d, ctrl) => ShortcutPolicy.Capture(d, ctrl, enabled, configuration), (d, ctrl, window) =>
+            dispatcher.BeginInvoke((Action)(() => Dispatch(d, ctrl, window))));
         using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         startup.Checked = run?.GetValue("Macaroni") != null;
         if (firstRun) { try { SetStartup(true); } catch (Exception ex) { Report(ex); } }
@@ -74,15 +77,60 @@ internal sealed class TrayApplication : ApplicationContext
         try { configuration = Configuration.Parse(File.ReadAllText(ConfigPath)); }
         catch (Exception ex) { Report(new Exception("Configuration unchanged: " + ex.Message)); }
     }
-    private async void Dispatch(int digit)
+    private async void Dispatch(int digit, bool control, nint window)
     {
         try
         {
-            if (digit == 0) { Toggle(); return; }
+            if (digit == 0) { if (!control) Toggle(); return; }
             var snapshot = configuration;
-            if (enabled && snapshot.Mappings.TryGetValue(digit.ToString(), out var mapping)) await actions.Execute(digit.ToString(), mapping, snapshot);
+            if (enabled && snapshot.Mappings.TryGetValue(digit.ToString(), out var mapping))
+            {
+                if (control) Assign(digit.ToString(), mapping, window);
+                else await actions.Execute(digit.ToString(), mapping, snapshot);
+            }
         }
         catch (Exception ex) { if (!stopping) Report(ex); }
+    }
+    private void Assign(string key, Mapping mapping, nint window, WindowCandidate? expected = null)
+    {
+        try
+        {
+            if (!enabled) throw new Exception("Enable Macaroni before assigning a dedicated window.");
+            if (!configuration.Mappings.TryGetValue(key, out var current) || !ReferenceEquals(current, mapping))
+                throw new Exception("The configuration changed. Open the window picker again.");
+            string title = actions.AssignDedicated(key, mapping, window, expected);
+            tray.ShowBalloonTip(3500, "Macaroni", $"Key {key} now uses ‘{title}’.", ToolTipIcon.Info);
+        }
+        catch (Exception ex) { Report(ex); }
+    }
+    private void PopulateDedicatedMenu()
+    {
+        foreach (var item in dedicatedMenu.DropDownItems.Cast<ToolStripItem>().ToArray()) item.Dispose();
+        dedicatedMenu.DropDownItems.Clear();
+        dedicatedMenu.Enabled = enabled;
+        try
+        {
+            foreach (var (key, mapping) in configuration.Mappings.OrderBy(pair => pair.Key))
+            {
+                if (mapping.Action != "application" || mapping.Selection != "dedicated") continue;
+                var choices = actions.DedicatedChoices(key, mapping);
+                string title = choices.FirstOrDefault(c => c.Current).Title ?? "Not assigned";
+                var entry = new ToolStripMenuItem($"{key}: {title.Replace("&", "&&")}");
+                entry.DropDownItems.Add(new ToolStripMenuItem($"Focus a window, then Ctrl + numpad {key}") { Enabled = false });
+                var picker = new ToolStripMenuItem("Choose window…");
+                foreach (var choice in choices)
+                {
+                    var option = new ToolStripMenuItem($"{choice.Title.Replace("&", "&&")} (PID {choice.Window.Pid}, window {choice.Window.Handle:X})") { Checked = choice.Current };
+                    option.Click += (_, _) => Assign(key, mapping, choice.Window.Handle, choice.Window);
+                    picker.DropDownItems.Add(option);
+                }
+                if (choices.Length == 0) picker.DropDownItems.Add(new ToolStripMenuItem("No matching windows open") { Enabled = false });
+                entry.DropDownItems.Add(picker);
+                dedicatedMenu.DropDownItems.Add(entry);
+            }
+            if (dedicatedMenu.DropDownItems.Count == 0) dedicatedMenu.DropDownItems.Add(new ToolStripMenuItem("No dedicated mappings configured") { Enabled = false });
+        }
+        catch (Exception ex) { Report(ex); }
     }
     private void Toggle()
     {

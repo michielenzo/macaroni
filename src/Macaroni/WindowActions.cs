@@ -20,6 +20,23 @@ internal sealed class WindowActions : IDisposable
         recent[Native.GetForegroundWindow()] = Environment.TickCount64;
     }
     private static string Expand(string value) => Environment.ExpandEnvironmentVariables(value);
+    private static string Identity(string key, Mapping mapping) => key + JsonSerializer.Serialize(mapping);
+    internal (WindowCandidate Window, string Title, bool Current)[] DedicatedChoices(string key, Mapping mapping)
+    {
+        var candidates = DedicatedCandidates(mapping);
+        var current = dedicated.Current(Identity(key, mapping), candidates);
+        return candidates.OrderByDescending(w => w.LastFocused).Select(w => (w, Title(w.Handle), w.Handle == current)).ToArray();
+    }
+    internal string AssignDedicated(string key, Mapping mapping, nint handle, WindowCandidate? expected = null)
+    {
+        if (mapping.Action != "application" || mapping.Selection != "dedicated") throw new Exception($"Key {key} is not a dedicated application mapping.");
+        if (busy.Contains(key)) throw new Exception($"Key {key} is still opening a window. Try assigning it again once that finishes.");
+        var candidates = DedicatedCandidates(mapping);
+        var chosen = expected ?? candidates.FirstOrDefault(w => w.Handle == handle);
+        if (chosen.Handle == 0 || chosen.Handle != handle || !dedicated.Assign(Identity(key, mapping), chosen, candidates))
+            throw new Exception($"Key {key} expects {mapping.Process}. Focus a matching application window and try again; the chosen window may have closed.");
+        return Title(handle);
+    }
     internal async Task Execute(string key, Mapping mapping, Configuration config)
     {
         if (!busy.Add(key)) return;
@@ -58,7 +75,7 @@ internal sealed class WindowActions : IDisposable
             }
             else
             {
-                string identity = key + JsonSerializer.Serialize(mapping);
+                string identity = Identity(key, mapping);
                 target = Find(mapping, identity);
                 if (target == 0)
                 {
@@ -80,7 +97,12 @@ internal sealed class WindowActions : IDisposable
     private nint Find(Mapping mapping, string identity)
     {
         if (mapping.Selection == "dedicated")
-        {
+            return dedicated.Select(identity, DedicatedCandidates(mapping));
+        return Candidates(mapping).Where(w => mapping.Selection != "title" || Title(w) == mapping.Title)
+            .OrderByDescending(w => recent.GetValueOrDefault(w)).FirstOrDefault();
+    }
+    private List<WindowCandidate> DedicatedCandidates(Mapping mapping)
+    {
             var available = new List<WindowCandidate>();
             foreach (var window in Candidates(mapping))
             {
@@ -95,10 +117,7 @@ internal sealed class WindowActions : IDisposable
                 catch (InvalidOperationException) { }
                 catch (System.ComponentModel.Win32Exception) { }
             }
-            return dedicated.Select(identity, available);
-        }
-        return Candidates(mapping).Where(w => mapping.Selection != "title" || Title(w) == mapping.Title)
-            .OrderByDescending(w => recent.GetValueOrDefault(w)).FirstOrDefault();
+            return available;
     }
     private static IEnumerable<nint> Candidates(Mapping m) => AllWindows().Where(w => IsProcess(w, m.Process));
     private static bool IsProcess(nint window, string name)

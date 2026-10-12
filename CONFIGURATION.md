@@ -85,7 +85,7 @@ Property names are case-insensitive, but use the spelling shown here. Option val
 
 Only keys `"1"` through `"9"` can appear in `mappings`. Key `"0"` is reserved. Remove a numbered entry to unmap it; there is no per-mapping `enabled` setting. An empty `"mappings": {}` is valid.
 
-The top-row number keys and separate navigation keys are not remapped. Holding a key triggers once per physical press. Holding Shift, Ctrl, Alt, or Windows does not disable a mapping. Additional presses for a mapping whose window is still being found are ignored until that action finishes.
+The top-row number keys and separate navigation keys are not remapped. Holding a key triggers once per physical press. Ctrl + a dedicated mapping assigns the focused window; Ctrl + other numpad keys passes through normally (including Ctrl + 0). Other modifiers do not disable remapping. Additional presses for a mapping whose window is still being found are ignored until that action finishes.
 
 ## Top-level settings
 
@@ -219,6 +219,16 @@ Keep using one chosen window until it closes. On first use, or if the tracked wi
 Once adopted, that window remains dedicated even if you focus another window of the same application. Launch arguments such as `["-w", "new"]` for Windows Terminal are used only when a launch is necessary. `title` is ignored in this mode; matching is scoped to `process`.
 
 The association is kept in memory for the current Macaroni session. After restarting Macaroni or changing the mapping, the next press adopts an available window again. Existing application windows are never closed by Macaroni.
+
+#### Choose a different dedicated window
+
+1. Focus the application window you want to use, for example a particular terminal.
+2. With Num Lock off and Macaroni enabled, press **Ctrl + numpad 7** (replace 7 with your dedicated mapping's key).
+3. A notification confirms which window was assigned. Future presses of **numpad 7** use that window.
+
+Assignment does not move, resize, or close any window. Placement happens on the next normal shortcut press. The focused window must belong to the mapping's configured `process`; otherwise Macaroni reports the mismatch and retains the previous assignment. This shortcut only captures Ctrl combinations for dedicated application mappings. With Num Lock on or Macaroni disabled, it passes through normally. Assignment is temporarily unavailable while that mapping is opening or placing a window.
+
+You can also right-click the tray icon and select **Dedicated windows → key and current title → Choose window…**. The picker lists matching windows and marks the current choice. Process IDs and window handles distinguish identical titles. Closed windows and configuration changes are checked again before an assignment is accepted. The picker is disabled while Macaroni is disabled. Choices have the same session lifetime as automatic dedicated associations; they are not saved to the configuration file.
 
 ## Opening folders
 

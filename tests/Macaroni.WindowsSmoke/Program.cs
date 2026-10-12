@@ -35,6 +35,25 @@ internal static class Program
             timer.Stop();
             try
             {
+                if (args.Contains("--assign-terminal"))
+                {
+                    var config = Configuration.Parse(File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json")));
+                    var mapping = config.Mappings["7"];
+                    using var actions = new WindowActions();
+                    var choices = actions.DedicatedChoices("7", mapping);
+                    if (choices.Length == 0) throw new Exception("Open a matching terminal before this check.");
+                    var chosen = choices.Last().Window;
+                    Native.GetWindowRect(chosen.Handle, out var before);
+                    var focusBefore = Native.GetForegroundWindow();
+                    actions.AssignDedicated("7", mapping, chosen.Handle, chosen);
+                    if (!actions.DedicatedChoices("7", mapping).Any(c => c.Window.Handle == chosen.Handle && c.Current)) throw new Exception("Assigned window not marked current.");
+                    Native.GetWindowRect(chosen.Handle, out var after);
+                    if (!before.Equals(after) || Native.GetForegroundWindow() != focusBefore) throw new Exception("Assignment moved or activated a window.");
+                    bool rejected = false;
+                    try { actions.AssignDedicated("7", mapping, dispatcher.Handle); } catch { rejected = true; }
+                    if (!rejected || !actions.DedicatedChoices("7", mapping).Any(c => c.Window.Handle == chosen.Handle && c.Current)) throw new Exception("Wrong-window assignment changed the selection.");
+                    Console.WriteLine("PASS: actual terminal assignment updates picker state without moving or focusing windows; wrong app rejected");
+                }
                 if (args.Contains("--adopt-terminal"))
                 {
                     var config = Configuration.Parse(File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json")));
