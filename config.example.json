@@ -12,13 +12,13 @@
       "arguments": ["-w", "new"],
       "selection": "recent",
       "monitor": 1,
-      "size": "maximize"
+      "layout": "maximize"
     },
     "8": {
       "action": "folder",
       "path": "%USERPROFILE%",
       "monitor": 1,
-      "size": "maximize"
+      "layout": "maximize"
     },
     "7": {
       "action": "command",
@@ -26,7 +26,7 @@
       "arguments": ["-NoExit", "-Command", "Get-Date"],
       "mode": "terminal",
       "monitor": 1,
-      "size": "preserve"
+      "layout": "preserve"
     },
     "6": {
       "action": "command",

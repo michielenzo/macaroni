@@ -36,6 +36,12 @@ To additionally test real activation of an already-running Windows Terminal wind
 
 To uninstall, turn off **Start with Windows**, exit from the tray, and remove the published folder. User settings remain in `%LOCALAPPDATA%\Macaroni` until you remove them.
 
+### Continuous integration
+
+The [GitHub Actions pipeline](.github/workflows/pipeline.yml) builds the Windows application and runs the automated policy/configuration checks on every push to `master`, using a Windows runner with .NET 10. A failed build or check fails the workflow. Results appear in the repository's [Actions tab](https://github.com/michielenzo/macaroni/actions). It becomes active once the workflow file is committed and pushed to `master`; no repository secrets are needed.
+
+CI invokes the test executable with `dotnet run`, because this project does not use a `dotnet test` test framework. Interactive desktop smoke checks remain manual: they require real application windows, monitors, and a logged-in desktop.
+
 ### Desktop acceptance checklist
 
 - Num Lock on: digits type normally; dedicated navigation keys are unaffected.
@@ -58,6 +64,8 @@ With Num Lock off, numpad 1–9 perform configurable actions. Numpad 0 enables/d
 ## Features
 
 Macaroni opens or focuses applications, reuses Explorer windows for folders, and runs commands either hidden or in a configurable terminal. Each shortcut chooses a monitor and window sizing behavior.
+
+Use `layout` to maximize, preserve normal dimensions, fill the left/right/top/bottom half, or occupy a corner quarter. Layouts respect the taskbar and skip resizing when the window already matches. This replaces the old `size` keyword.
 
 **See the [Configuration guide](CONFIGURATION.md) for every keyword, defaults, complete examples, window-selection strategies, monitor numbering, and troubleshooting.** The guide includes Windows Terminal, Chrome, ChatGPT, and tag-watch examples. The [example configuration](config.example.json) is the first-run template.
 

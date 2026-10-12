@@ -186,23 +186,7 @@ internal sealed class WindowActions : IDisposable
     private async Task Place(nint window, Mapping mapping, Configuration config)
     {
         var destination = MonitorCatalog.Resolve(mapping.Monitor, config);
-        // Restoring an already-maximized window just to maximize it again
-        // causes a visible animation on every shortcut press. Only reposition
-        // it when it needs to move to another monitor or change sizing mode.
-        if (mapping.Size == "maximize" && Native.IsZoomed(window) && !Native.IsIconic(window) &&
-            Screen.FromHandle(window).DeviceName == destination.DeviceName)
-        {
-            await ForegroundActivation.Focus(window, lifetime.Token);
-            return;
-        }
-        var area = destination.WorkingArea;
-        if (Native.IsIconic(window) || Native.IsZoomed(window)) Native.ShowWindow(window, 9);
-        Native.GetWindowRect(window, out var rect);
-        int width = Math.Min(Math.Max(rect.Right - rect.Left, 100), area.Width);
-        int height = Math.Min(Math.Max(rect.Bottom - rect.Top, 100), area.Height);
-        if (!Native.SetWindowPos(window, 0, area.Left + (area.Width - width) / 2, area.Top + (area.Height - height) / 2, width, height, 0x14))
-            throw new Exception("Windows refused to move the target window.");
-        if (mapping.Size == "maximize" && !Native.IsZoomed(window)) Native.ShowWindow(window, 3);
+        WindowPlacement.Apply(window, mapping.Layout, destination);
         await ForegroundActivation.Focus(window, lifetime.Token);
     }
     public void Dispose()

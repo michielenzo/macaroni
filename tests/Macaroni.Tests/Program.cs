@@ -13,6 +13,23 @@ void Reject(string name, string json)
     Check(name, false);
 }
 var assignments = new Dictionary<string, string> { ["1"] = "laptop", ["2"] = "external-right", ["3"] = "external-left" };
+var area = new System.Drawing.Rectangle(-1001, -801, 1001, 801);
+var halfLeft = Layouts.Bounds("left", area, default);
+var halfRight = Layouts.Bounds("right", area, default);
+Check("Odd-width halves meet without gaps or overlap", halfLeft.Right == halfRight.Left && halfLeft.Width + halfRight.Width == area.Width && halfRight.Right == area.Right);
+var halfTop = Layouts.Bounds("top", area, default);
+var halfBottom = Layouts.Bounds("bottom", area, default);
+Check("Odd-height halves meet without gaps or overlap", halfTop.Bottom == halfBottom.Top && halfTop.Height + halfBottom.Height == area.Height && halfBottom.Bottom == area.Bottom);
+var quarters = new[] { "top-left", "top-right", "bottom-left", "bottom-right" }.Select(l => Layouts.Bounds(l, area, default)).ToArray();
+Check("Corners fill work area exactly", quarters.Sum(r => r.Width * r.Height) == area.Width * area.Height && quarters.All(area.Contains));
+Check("Bottom-right respects negative origin and odd edges", quarters[3] == new System.Drawing.Rectangle(-501, -401, 501, 401));
+Check("Preserve clamps oversized window to work area", Layouts.Bounds("preserve", area, new(2000, 2000)) == area);
+Check("Identical bounds skip repositioning", Layouts.Matches(area, area));
+Check("Moved window needs repositioning", !Layouts.Matches(area, new(area.X + 10, area.Y, area.Width, area.Height)));
+foreach (string layout in Layouts.Names)
+    Check($"Accept layout {layout}", Configuration.Parse("{\"mappings\":{\"4\":{\"action\":\"folder\",\"path\":\"C:/\",\"layout\":\"" + layout + "\"}}}").Mappings["4"].Layout == layout);
+Reject("Unknown layout rejected", """{"mappings":{"4":{"action":"folder","path":"C:/","layout":"diagonal"}}}""");
+Reject("Old size keyword rejected after rename", """{"mappings":{"4":{"action":"folder","path":"C:/","size":"left"}}}""");
 var dedicated = new DedicatedWindows();
 var firstWindow = new WindowCandidate(11, 101, 1001, 10);
 var secondWindow = new WindowCandidate(22, 102, 1002, 20);

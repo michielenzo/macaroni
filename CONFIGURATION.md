@@ -48,7 +48,7 @@ This is a whole configuration file. Adjust the Chrome path and folder to match y
       "process": "chrome",
       "selection": "recent",
       "monitor": 2,
-      "size": "maximize"
+      "layout": "maximize"
     },
     "7": {
       "action": "application",
@@ -57,13 +57,13 @@ This is a whole configuration file. Adjust the Chrome path and folder to match y
       "arguments": ["-w", "new"],
       "selection": "dedicated",
       "monitor": 1,
-      "size": "maximize"
+      "layout": "maximize"
     },
     "9": {
       "action": "folder",
       "path": "%USERPROFILE%/Documents",
       "monitor": 1,
-      "size": "preserve"
+      "layout": "preserve"
     }
   }
 }
@@ -118,9 +118,9 @@ These settings belong inside a numbered mapping, for example inside `"4": { ... 
 | `workingDirectory` | String | Empty | Optional launch working directory for applications and commands. Empty leaves it unspecified. |
 | `mode` | `"hidden"`, `"terminal"` | `"hidden"` | How a command runs. |
 | `monitor` | Integer, at least `1` | `1` | Destination display for application, folder, and terminal-command windows. |
-| `size` | `"maximize"`, `"preserve"` | `"maximize"` | Sizing behavior for those windows. |
+| `layout` | `"maximize"`, `"preserve"`, `"left"`, `"right"`, `"top"`, `"bottom"`, `"top-left"`, `"top-right"`, `"bottom-left"`, `"bottom-right"` | `"maximize"` | Window placement within the target monitor's working area. |
 
-Settings only affect their applicable action. For example, `title` does not name a dedicated window, `selection` does not make a command reusable, and `monitor` does not affect a hidden command. Leave irrelevant settings out. Invalid `selection`, `monitor`, `size`, or `arguments` values still fail validation even on mappings that do not use them.
+Settings only affect their applicable action. For example, `title` does not name a dedicated window, `selection` does not make a command reusable, and `monitor` does not affect a hidden command. Leave irrelevant settings out. Invalid `selection`, `monitor`, `layout`, or `arguments` values still fail validation even on mappings that do not use them.
 
 ## Opening and focusing applications
 
@@ -163,7 +163,7 @@ Use the returned **AppID** after `shell:AppsFolder\` in the launch argument. The
     "process": "ChatGPT",
     "selection": "recent",
     "monitor": 1,
-    "size": "maximize"
+    "layout": "maximize"
   },
   "5": {
     "action": "application",
@@ -172,7 +172,7 @@ Use the returned **AppID** after `shell:AppsFolder\` in the launch argument. The
     "process": "TagWatch",
     "selection": "recent",
     "monitor": 1,
-    "size": "maximize"
+    "layout": "maximize"
   }
 }
 ```
@@ -205,7 +205,7 @@ For Windows Terminal, this example requests a fixed tab title and suppresses app
     "selection": "title",
     "title": "Macaroni Terminal",
     "monitor": 1,
-    "size": "maximize"
+    "layout": "maximize"
   }
 }
 ```
@@ -240,7 +240,7 @@ Use `"action": "folder"` and an existing filesystem `path`:
     "action": "folder",
     "path": "C:/dev",
     "monitor": 1,
-    "size": "maximize"
+    "layout": "maximize"
   }
 }
 ```
@@ -284,7 +284,7 @@ Start a new configured terminal window and run the command inside it. For exampl
     "arguments": ["-NoExit", "-Command", "Get-Date"],
     "mode": "terminal",
     "monitor": 2,
-    "size": "preserve"
+    "layout": "preserve"
   }
 }
 ```
@@ -366,14 +366,36 @@ Connected displays are checked when the shortcut runs, so fallback also applies 
 
 Earlier builds used the numeric suffix of a GDI device name or required manual assignments. The default now uses live Windows display-path numbering. Remove an old `monitors` object to use the automatic behavior.
 
-### `size`
+### `layout`
+
+This setting was previously named `size`. Rename that key to `layout` in older configurations; the old keyword is no longer accepted. The existing values `maximize` and `preserve` still work.
 
 | Value | Behavior |
 | --- | --- |
 | `"maximize"` | Restore if needed, move to the target display, maximize, and focus. If already maximized on that display, only focus it; no repeated maximize animation. |
 | `"preserve"` | Use the restored window dimensions, center on the target display, and focus. Clamp dimensions to fit the display's working area. An already-maximized window is restored to its normal size. |
+| `"left"` / `"right"` | Left or right half: half the available width and full available height. |
+| `"top"` / `"bottom"` | Top or bottom half: full available width and half the available height. |
+| `"top-left"` / `"top-right"` | Upper-left or upper-right quarter: half the available width and height. |
+| `"bottom-left"` / `"bottom-right"` | Lower-left or lower-right quarter: half the available width and height. |
 
-`preserve` preserves normal dimensions as far as they fit, not the previous position or maximized state. Both modes use the working area, excluding space reserved for the taskbar. Fixed coordinates, explicit width/height, fullscreen, and minimize actions are not configurable.
+`preserve` preserves normal dimensions as far as they fit, not the previous position or maximized state. All layouts use the working area, excluding space reserved for the taskbar. Matching windows are only focused, without another restore, move, or resize. Windows' invisible resize borders are accounted for so visible edges align. Applications that enforce their own minimum size may not fit a small half or quarter layout exactly.
+
+For example, this places Chrome in the left half of monitor 2:
+
+```json
+{
+  "4": {
+    "action": "application",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "process": "chrome",
+    "monitor": 2,
+    "layout": "left"
+  }
+}
+```
+
+Layouts work for application mappings, folders, and terminal-mode commands. Hidden commands have no window to arrange. These are direct window placements, not Windows Snap groups. Fixed coordinates, explicit width/height, fullscreen, and minimize actions are not configurable.
 
 ## Paths, arguments, and environment variables
 

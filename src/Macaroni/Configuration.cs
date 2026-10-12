@@ -25,7 +25,7 @@ public sealed class Configuration
         {
             if (key.Length != 1 || key[0] < '1' || key[0] > '9' || m is null) throw new Exception("Mappings must use keys 1–9. Key 0 is reserved.");
             if (m.Action is not ("application" or "folder" or "command")) throw new Exception($"Key {key}: invalid action.");
-            if (m.Monitor < 1 || m.Size is not ("maximize" or "preserve")) throw new Exception($"Key {key}: invalid monitor or size.");
+            if (m.Monitor < 1 || !Layouts.Names.Contains(m.Layout)) throw new Exception($"Key {key}: invalid monitor or layout.");
             if (m.Selection is not ("recent" or "title" or "dedicated")) throw new Exception($"Key {key}: invalid selection.");
             if (m.Action == "application" && (string.IsNullOrWhiteSpace(m.Executable) || string.IsNullOrWhiteSpace(m.Process))) throw new Exception($"Key {key}: executable and process are required.");
             if (m.Action == "application" && m.Selection == "title" && string.IsNullOrEmpty(m.Title)) throw new Exception($"Key {key}: title is required.");
@@ -55,5 +55,5 @@ public sealed class Mapping
     public string WorkingDirectory { get; set; } = "";
     public string Mode { get; set; } = "hidden";
     public int Monitor { get; set; } = 1;
-    public string Size { get; set; } = "maximize";
+    public string Layout { get; set; } = "maximize";
 }

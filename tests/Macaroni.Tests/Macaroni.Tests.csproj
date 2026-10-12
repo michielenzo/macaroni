@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Macaroni/Layouts.cs" Link="Layouts.cs" />
     <Compile Include="../../src/Macaroni/ShortcutPolicy.cs" Link="ShortcutPolicy.cs" />
     <Compile Include="../../src/Macaroni/DedicatedWindows.cs" Link="DedicatedWindows.cs" />
     <Compile Include="../../src/Macaroni/Configuration.cs" Link="Configuration.cs" />

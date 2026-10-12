@@ -7,6 +7,36 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Contains("--layouts"))
+        {
+            using var form = new Form { Text = "Macaroni layout verification", StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(100, 100, 600, 400) };
+            form.Shown += async (_, _) =>
+            {
+                try
+                {
+                    foreach (var screen in Screen.AllScreens)
+                    {
+                        foreach (var layout in Layouts.Names)
+                        {
+                            WindowPlacement.Apply(form.Handle, layout, screen);
+                            await Task.Delay(100);
+                            if (layout == "maximize")
+                            {
+                                if (!Native.IsZoomed(form.Handle) || Screen.FromHandle(form.Handle).DeviceName != screen.DeviceName) throw new Exception("Maximize failed");
+                            }
+                            else if (!Layouts.Matches(WindowPlacement.VisibleBounds(form.Handle), Layouts.Bounds(layout, screen.WorkingArea, WindowPlacement.VisibleBounds(form.Handle).Size)))
+                                throw new Exception($"{layout}: actual {WindowPlacement.VisibleBounds(form.Handle)}, expected {Layouts.Bounds(layout, screen.WorkingArea, default)}");
+                            if (WindowPlacement.Apply(form.Handle, layout, screen)) throw new Exception($"Repeated {layout} changed the window again.");
+                            Console.WriteLine($"PASS: {screen.DeviceName} {layout} fits work area; repeat does not move/resize");
+                        }
+                    }
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { form.Close(); }
+            };
+            Application.Run(form);
+            return;
+        }
         if (args.Contains("--monitors"))
         {
             foreach (var display in MonitorCatalog.WindowsDisplays())
