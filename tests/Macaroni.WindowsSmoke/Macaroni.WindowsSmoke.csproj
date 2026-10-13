@@ -8,6 +8,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Macaroni/AppNames.cs" Link="AppNames.cs" />
+    <Compile Include="../../src/Macaroni/AppCatalog.cs" Link="AppCatalog.cs" />
+    <Compile Include="../../src/Macaroni/WindowAppIdentity.cs" Link="WindowAppIdentity.cs" />
     <Compile Include="../../src/Macaroni/Layouts.cs" Link="Layouts.cs" />
     <Compile Include="../../src/Macaroni/WindowPlacement.cs" Link="WindowPlacement.cs" />
     <Compile Include="../../src/Macaroni/DedicatedWindows.cs" Link="DedicatedWindows.cs" />

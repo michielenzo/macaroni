@@ -33,6 +33,7 @@ internal sealed class TrayApplication : ApplicationContext
     private Configuration configuration = new();
     private bool enabled;
     private bool stopping;
+    private int configurationRevision;
     internal TrayApplication()
     {
         Directory.CreateDirectory(directory);
@@ -45,6 +46,7 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add(dedicatedMenu);
         menu.Opening += (_, _) => PopulateDedicatedMenu();
         menu.Items.Add("Open configuration", null, (_, _) => Open(ConfigPath));
+        menu.Items.Add("List applications", null, (_, _) => ListApplications());
         menu.Items.Add("Reload configuration", null, (_, _) => LoadConfiguration());
         menu.Items.Add("Show monitor identities", null, (_, _) => ShowMonitors());
         menu.Items.Add(startup);
@@ -72,10 +74,16 @@ internal sealed class TrayApplication : ApplicationContext
         try { dispatcher.BeginInvoke((Action)(() => { reload.Stop(); reload.Start(); })); }
         catch (InvalidOperationException) { }
     }
-    private void LoadConfiguration()
+    private async void LoadConfiguration()
     {
-        try { configuration = Configuration.Parse(File.ReadAllText(ConfigPath)); }
-        catch (Exception ex) { Report(new Exception("Configuration unchanged: " + ex.Message)); }
+        int revision = ++configurationRevision;
+        try
+        {
+            var candidate = Configuration.Parse(File.ReadAllText(ConfigPath));
+            await AppCatalog.ResolveAsync(candidate);
+            if (!stopping && revision == configurationRevision) configuration = candidate;
+        }
+        catch (Exception ex) { if (!stopping && revision == configurationRevision) Report(new Exception("Configuration unchanged: " + ex.Message)); }
     }
     private async void Dispatch(int digit, bool control, nint window)
     {
@@ -179,6 +187,18 @@ internal sealed class TrayApplication : ApplicationContext
             Open(path);
         }
         catch (Exception ex) { Report(ex); }
+    }
+    private async void ListApplications()
+    {
+        try
+        {
+            var catalog = await AppCatalog.ReadAsync();
+            if (stopping) return;
+            var path = System.IO.Path.Combine(directory, "applications.json");
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(catalog, Configuration.JsonOptions));
+            Open(path);
+        }
+        catch (Exception ex) { if (!stopping) Report(ex); }
     }
     private void Report(Exception ex)
     {

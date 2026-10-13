@@ -34,7 +34,7 @@ internal sealed class WindowActions : IDisposable
         var candidates = DedicatedCandidates(mapping);
         var chosen = expected ?? candidates.FirstOrDefault(w => w.Handle == handle);
         if (chosen.Handle == 0 || chosen.Handle != handle || !dedicated.Assign(Identity(key, mapping), chosen, candidates))
-            throw new Exception($"Key {key} expects {mapping.Process}. Focus a matching application window and try again; the chosen window may have closed.");
+            throw new Exception($"Key {key} expects {(string.IsNullOrWhiteSpace(mapping.StartMenuName) ? mapping.Process : mapping.StartMenuName)}. Focus a matching application window and try again; the chosen window may have closed.");
         return Title(handle);
     }
     internal async Task Execute(string key, Mapping mapping, Configuration config)
@@ -54,9 +54,9 @@ internal sealed class WindowActions : IDisposable
                 else
                 {
                     var before = AllWindows().ToHashSet();
-                    var terminal = StartInfo(config.Terminal, config.TerminalArguments.Concat(new[] { Expand(mapping.Executable) }).Concat(mapping.Arguments), mapping.WorkingDirectory);
+                    var terminal = StartInfo(config.Terminal.Executable, config.Terminal.Arguments.Concat(new[] { Expand(mapping.Executable) }).Concat(mapping.Arguments), mapping.WorkingDirectory);
                     using var process = Process.Start(terminal);
-                    var window = await WaitFor(() => AllWindows().FirstOrDefault(w => !before.Contains(w) && IsProcess(w, config.TerminalProcess)));
+                    var window = await WaitFor(() => AllWindows().FirstOrDefault(w => !before.Contains(w) && IsProcess(w, config.Terminal.Process)));
                     await Place(window, mapping, config);
                 }
                 return;
@@ -77,9 +77,19 @@ internal sealed class WindowActions : IDisposable
             {
                 string identity = Identity(key, mapping);
                 target = Find(mapping, identity);
-                if (target == 0)
+                if (target == 0 || mapping.LaunchAlways)
                 {
-                    using var process = Process.Start(StartInfo(mapping.Executable, mapping.Arguments, mapping.WorkingDirectory));
+                    using var process = StartApplication(mapping);
+                    // Single-instance editors forward file arguments to their
+                    // existing window and then exit. Give that launcher time
+                    // to hand off before selecting and placing the window.
+                    if (target != 0 && process != null)
+                    {
+                        using var handoff = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                        handoff.CancelAfter(TimeSpan.FromSeconds(2));
+                        try { await process.WaitForExitAsync(handoff.Token); }
+                        catch (OperationCanceledException) when (!lifetime.IsCancellationRequested) { }
+                    }
                     target = await WaitFor(() => Find(mapping, identity));
                 }
             }
@@ -93,6 +103,23 @@ internal sealed class WindowActions : IDisposable
         foreach (var arg in args) start.ArgumentList.Add(Expand(arg));
         if (!string.IsNullOrWhiteSpace(directory)) start.WorkingDirectory = Expand(directory);
         return start;
+    }
+    private static InstalledApp ResolveApp(Mapping mapping) => mapping.Installed ??= AppNames.Resolve(mapping.StartMenuName, AppCatalog.Read());
+    private static Process? StartApplication(Mapping mapping)
+    {
+        if (string.IsNullOrWhiteSpace(mapping.StartMenuName) || !string.IsNullOrWhiteSpace(mapping.Executable))
+            return Process.Start(StartInfo(mapping.Executable, mapping.Arguments, mapping.WorkingDirectory));
+        var app = ResolveApp(mapping);
+        if (app.Launcher.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        {
+            if (mapping.Arguments.Length > 0) throw new Exception("Packaged app arguments require an explicit executable override.");
+            return Process.Start(StartInfo("explorer.exe", [app.Launcher], mapping.WorkingDirectory));
+        }
+        // Launch the shortcut itself to retain Chrome app/profile arguments,
+        // working directory and any other shell launch metadata.
+        var start = StartInfo(app.Launcher, mapping.Arguments, mapping.WorkingDirectory);
+        start.UseShellExecute = true;
+        return Process.Start(start);
     }
     private nint Find(Mapping mapping, string identity)
     {
@@ -119,7 +146,23 @@ internal sealed class WindowActions : IDisposable
             }
             return available;
     }
-    private static IEnumerable<nint> Candidates(Mapping m) => AllWindows().Where(w => IsProcess(w, m.Process));
+    private static IEnumerable<nint> Candidates(Mapping m) => AllWindows().Where(w => MatchesApplication(w, m));
+    internal static bool MatchesApplication(nint window, Mapping mapping)
+    {
+        if (string.IsNullOrWhiteSpace(mapping.StartMenuName)) return IsProcess(window, mapping.Process);
+        var app = ResolveApp(mapping);
+        string id = WindowAppIdentity.Read(window);
+        if (app.StrictIdentity)
+        {
+            // Never fall back to chrome.exe for installed web apps: that could
+            // adopt a browser or a completely different web app's window.
+            return AppNames.IdentityMatches(app, id) && (string.IsNullOrWhiteSpace(mapping.Process) || IsProcess(window, mapping.Process));
+        }
+        string process = string.IsNullOrWhiteSpace(mapping.Process) ? app.Process : mapping.Process;
+        if (!IsProcess(window, process)) return false;
+        if (process.Equals("chrome", StringComparison.OrdinalIgnoreCase) && id.Contains("._crx_", StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
     private static bool IsProcess(nint window, string name)
     {
         try

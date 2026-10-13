@@ -7,6 +7,43 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length == 2 && args[0] == "--validate-config")
+        {
+            var candidate = Configuration.Parse(File.ReadAllText(args[1]));
+            AppCatalog.Resolve(candidate);
+            Console.WriteLine($"PASS: strict configuration validated; {candidate.Mappings.Count} mappings and all Start menu names resolved");
+            return;
+        }
+        if (args.Contains("--apps"))
+        {
+            var apps = AppCatalog.Read();
+            Console.WriteLine($"PASS: discovered {apps.Length} Start menu applications");
+            foreach (string name in new[] { "Google Chrome", "Gmail", "ChatGPT", "tag-watch" })
+            {
+                var matches = apps.Where(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+                foreach (var app in matches) Console.WriteLine($"APP {app.Name}: process={app.Process}, strict={app.StrictIdentity}, id={app.AppId}");
+            }
+            var chrome = AppNames.Resolve("google chrome", apps);
+            if (chrome.Process != "chrome" || !File.Exists(chrome.Launcher)) throw new Exception("Chrome shortcut resolution failed.");
+            Console.WriteLine("PASS: Google Chrome resolves by case-insensitive display name");
+            Native.EnumWindows((window, _) =>
+            {
+                if (!Native.IsWindowVisible(window)) return true;
+                var title = new System.Text.StringBuilder(2048);
+                Native.GetWindowText(window, title, title.Capacity);
+                if (title.Length == 0) return true;
+                string id = WindowAppIdentity.Read(window);
+                foreach (var app in apps.Where(a => a.StrictIdentity))
+                    if (AppNames.IdentityMatches(app, id))
+                    {
+                        if (!WindowActions.MatchesApplication(window, new Mapping { Action = "application", StartMenuName = app.Name, Installed = app })) throw new Exception("Identity matched but window rejected.");
+                        if (app.Process == "chrome" && WindowActions.MatchesApplication(window, new Mapping { Action = "application", StartMenuName = "Google Chrome", Installed = chrome })) throw new Exception("Chrome app incorrectly matched regular Chrome.");
+                        Console.WriteLine($"PASS: open window matched {app.Name} by identity: {id}");
+                    }
+                return true;
+            }, 0);
+            return;
+        }
         if (args.Contains("--layouts"))
         {
             using var form = new Form { Text = "Macaroni layout verification", StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(100, 100, 600, 400) };
@@ -65,6 +102,65 @@ internal static class Program
             timer.Stop();
             try
             {
+                if (args.Contains("--named-launch"))
+                {
+                    var config = new Configuration();
+                    using var actions = new WindowActions();
+                    foreach (string name in new[] { "Google Chrome", "ChatGPT", "Gmail" })
+                    {
+                        var mapping = new Mapping { Action = "application", StartMenuName = name, LaunchAlways = true };
+                        config.Mappings = new() { ["2"] = mapping };
+                        AppCatalog.Resolve(config);
+                        nint existing = 0;
+                        Native.EnumWindows((window, _) =>
+                        {
+                            if (Native.IsWindowVisible(window) && WindowActions.MatchesApplication(window, mapping)) { existing = window; return false; }
+                            return true;
+                        }, 0);
+                        // Keep the app on its current display during this check.
+                        if (existing != 0)
+                            mapping.Monitor = MonitorCatalog.WindowsDisplays().First(d => d.Screen.DeviceName == Screen.FromHandle(existing).DeviceName).Number;
+                        await actions.Execute("2", mapping, config);
+                        if (!WindowActions.MatchesApplication(Native.GetForegroundWindow(), mapping)) throw new Exception("Wrong app focused for " + name);
+                        Console.WriteLine($"PASS: {name} launches by Start menu name and focuses a matching window");
+                        mapping.LaunchAlways = false;
+                        var before = Native.GetForegroundWindow();
+                        await actions.Execute("2", mapping, config);
+                        if (Native.GetForegroundWindow() != before) throw new Exception("Reuse selected a different window for " + name);
+                        Console.WriteLine($"PASS: {name} reuses its existing window");
+                    }
+                }
+                if (args.Contains("--notepad-config"))
+                {
+                    var configPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json");
+                    var settingsPath = args.LastOrDefault(a => a.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) ?? configPath;
+                    var config = Configuration.Parse(File.ReadAllText(settingsPath));
+                    var mapping = config.Mappings["3"];
+                    if (mapping.Action != "application" || mapping.Process != "notepad++" || !mapping.LaunchAlways) throw new Exception("Expected key 3 to open config in Notepad++ on each press.");
+                    using var actions = new WindowActions();
+                    for (int press = 0; press < 2; press++)
+                    {
+                        if (press == 1)
+                        {
+                            using var other = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(mapping.Executable)
+                            {
+                                UseShellExecute = false,
+                                ArgumentList = { System.IO.Path.GetFullPath("README.md") }
+                            });
+                            await Task.Delay(500);
+                        }
+                        await actions.Execute("3", mapping, config);
+                        await Task.Delay(150);
+                        var window = Native.GetForegroundWindow();
+                        Native.GetWindowThreadProcessId(window, out var pid);
+                        using var owner = System.Diagnostics.Process.GetProcessById((int)pid);
+                        var title = new System.Text.StringBuilder(4096);
+                        Native.GetWindowText(window, title, title.Capacity);
+                        if (owner.ProcessName != "notepad++" || !title.ToString().Contains("config.json")) throw new Exception("Config file was not selected in Notepad++: " + title);
+                        if (Screen.FromHandle(window).DeviceName != MonitorCatalog.Resolve(mapping.Monitor, config).DeviceName || !Native.IsZoomed(window)) throw new Exception("Notepad++ placement did not match monitor/layout.");
+                        Console.WriteLine($"PASS: key 3 press {press + 1} opens config.json and focuses/maximizes Notepad++ on monitor {mapping.Monitor}");
+                    }
+                }
                 if (args.Contains("--assign-terminal"))
                 {
                     var config = Configuration.Parse(File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Macaroni", "config.json")));

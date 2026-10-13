@@ -5,15 +5,15 @@ namespace Macaroni;
 public sealed class Configuration
 {
     public int Version { get; set; } = 1;
-    public string Terminal { get; set; } = "wt.exe";
-    public string TerminalProcess { get; set; } = "WindowsTerminal";
-    public string[] TerminalArguments { get; set; } = ["-w", "new"];
+    public TerminalSettings Terminal { get; set; } = new();
     public Dictionary<string, Mapping> Mappings { get; set; } = new();
     public Dictionary<string, string> Monitors { get; set; } = new();
     public static Configuration Parse(string json)
     {
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        RejectDuplicates(document.RootElement, "configuration");
         var config = JsonSerializer.Deserialize<Configuration>(json, JsonOptions) ?? throw new Exception("Empty configuration.");
-        if (config.Version != 1 || string.IsNullOrWhiteSpace(config.Terminal) || string.IsNullOrWhiteSpace(config.TerminalProcess) || config.TerminalArguments is null || config.TerminalArguments.Any(a => a is null) || config.Mappings is null)
+        if (config.Version != 1 || config.Terminal is null || string.IsNullOrWhiteSpace(config.Terminal.Executable) || string.IsNullOrWhiteSpace(config.Terminal.Process) || config.Terminal.Arguments is null || config.Terminal.Arguments.Any(a => a is null) || config.Mappings is null)
             throw new Exception("Invalid configuration version, terminal, or mappings.");
         if (config.Monitors is null) throw new Exception("monitors must be an object.");
         foreach (var (number, identity) in config.Monitors)
@@ -25,15 +25,59 @@ public sealed class Configuration
         {
             if (key.Length != 1 || key[0] < '1' || key[0] > '9' || m is null) throw new Exception("Mappings must use keys 1–9. Key 0 is reserved.");
             if (m.Action is not ("application" or "folder" or "command")) throw new Exception($"Key {key}: invalid action.");
+            var fields = document.RootElement.EnumerateObject().First(p => p.Name.Equals("mappings", StringComparison.OrdinalIgnoreCase)).Value.GetProperty(key);
+            ValidateFields(key, m, fields);
             if (m.Monitor < 1 || !Layouts.Names.Contains(m.Layout)) throw new Exception($"Key {key}: invalid monitor or layout.");
             if (m.Selection is not ("recent" or "title" or "dedicated")) throw new Exception($"Key {key}: invalid selection.");
-            if (m.Action == "application" && (string.IsNullOrWhiteSpace(m.Executable) || string.IsNullOrWhiteSpace(m.Process))) throw new Exception($"Key {key}: executable and process are required.");
-            if (m.Action == "application" && m.Selection == "title" && string.IsNullOrEmpty(m.Title)) throw new Exception($"Key {key}: title is required.");
+            if (m.Action == "application" && (string.IsNullOrWhiteSpace(m.StartMenuName) == string.IsNullOrWhiteSpace(m.Executable))) throw new Exception($"Key {key}: supply exactly one of startMenuName or executable.");
+            if (m.Action == "application" && string.IsNullOrWhiteSpace(m.StartMenuName) && string.IsNullOrWhiteSpace(m.Process)) throw new Exception($"Key {key}: executable applications require process.");
+            if (!string.IsNullOrWhiteSpace(m.StartMenuName) && m.Action != "application") throw new Exception($"Key {key}: app is only supported for application actions.");
+            if (m.Action == "application" && m.Selection == "title" && string.IsNullOrWhiteSpace(m.Title)) throw new Exception($"Key {key}: title is required.");
             if (m.Action == "folder" && string.IsNullOrWhiteSpace(m.Path)) throw new Exception($"Key {key}: path is required.");
             if (m.Action == "command" && (string.IsNullOrWhiteSpace(m.Executable) || m.Mode is not ("hidden" or "terminal"))) throw new Exception($"Key {key}: executable and valid mode are required.");
             if (m.Arguments is null || m.Arguments.Any(a => a is null)) throw new Exception($"Key {key}: arguments must be an array of strings.");
         }
         return config;
+    }
+    private static void RejectDuplicates(JsonElement element, string location)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name)) throw new Exception($"Duplicate property or key ‘{property.Name}’ in {location}.");
+                RejectDuplicates(property.Value, location + "." + property.Name);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+            foreach (var item in element.EnumerateArray()) RejectDuplicates(item, location);
+    }
+    private static void ValidateFields(string key, Mapping mapping, JsonElement fields)
+    {
+        string[] allowed = mapping.Action switch
+        {
+            "application" => ["action", "startMenuName", "executable", "process", "arguments", "workingDirectory", "selection", "title", "launchAlways", "monitor", "layout"],
+            "folder" => ["action", "path", "monitor", "layout"],
+            "command" => ["action", "executable", "arguments", "workingDirectory", "mode", "monitor", "layout"],
+            _ => []
+        };
+        var properties = fields.EnumerateObject().ToArray();
+        foreach (var property in properties)
+        {
+            if (!allowed.Contains(property.Name, StringComparer.OrdinalIgnoreCase)) throw new Exception($"Key {key}: {property.Name} does not apply to {mapping.Action}.");
+            if (property.Value.ValueKind == JsonValueKind.Null) throw new Exception($"Key {key}: {property.Name} cannot be null.");
+        }
+        bool Has(string name) => properties.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (mapping.Action == "application")
+        {
+            if (Has("startMenuName") && Has("executable")) throw new Exception($"Key {key}: startMenuName and executable cannot be combined.");
+            if (Has("startMenuName") && string.IsNullOrWhiteSpace(mapping.StartMenuName)) throw new Exception($"Key {key}: startMenuName cannot be empty.");
+            if (Has("process") && string.IsNullOrWhiteSpace(mapping.Process)) throw new Exception($"Key {key}: process cannot be empty when provided.");
+            if (Has("title") && mapping.Selection != "title") throw new Exception($"Key {key}: title requires selection: title.");
+        }
+        if (mapping.Action == "command" && mapping.Mode == "hidden" && (Has("monitor") || Has("layout")))
+            throw new Exception($"Key {key}: hidden commands cannot have monitor or layout settings.");
     }
     public static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true, WriteIndented = true, UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow };
     public static int ResolveMonitor(int requested, IEnumerable<int> available)
@@ -43,12 +87,22 @@ public sealed class Configuration
     }
 }
 
+public sealed class TerminalSettings
+{
+    public string Executable { get; set; } = "wt.exe";
+    public string Process { get; set; } = "WindowsTerminal";
+    public string[] Arguments { get; set; } = ["-w", "new"];
+}
+
 public sealed class Mapping
 {
-    public string Action { get; set; } = "application";
+    public string StartMenuName { get; set; } = "";
+    [System.Text.Json.Serialization.JsonIgnore] internal InstalledApp? Installed { get; set; }
+    public string Action { get; set; } = "";
     public string Executable { get; set; } = "";
     public string Process { get; set; } = "";
     public string[] Arguments { get; set; } = [];
+    public bool LaunchAlways { get; set; }
     public string Selection { get; set; } = "recent";
     public string Title { get; set; } = "";
     public string Path { get; set; } = "";

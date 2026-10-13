@@ -12,6 +12,7 @@ Macaroni maps physical numpad keys to applications, folders, or commands. This g
 - [Top-level settings](#top-level-settings)
 - [Mapping settings reference](#mapping-settings-reference)
 - [Opening and focusing applications](#opening-and-focusing-applications)
+- [Find applications by Start menu name](#find-applications-by-start-menu-name)
 - [Choosing a window](#choosing-a-window)
 - [Opening folders](#opening-folders)
 - [Running commands](#running-commands)
@@ -38,9 +39,11 @@ This is a whole configuration file. Adjust the Chrome path and folder to match y
 ```json
 {
   "version": 1,
-  "terminal": "wt.exe",
-  "terminalProcess": "WindowsTerminal",
-  "terminalArguments": ["-w", "new"],
+  "terminal": {
+    "executable": "wt.exe",
+    "process": "WindowsTerminal",
+    "arguments": ["-w", "new"]
+  },
   "mappings": {
     "4": {
       "action": "application",
@@ -96,9 +99,7 @@ These belong outside `mappings`, next to it in the outermost object.
 | `version` | Integer | `1` | Configuration format version. Only `1` is supported. |
 | `mappings` | Object | `{}` | Numbered entries defining your shortcuts. |
 | `monitors` | Object | `{}` | Optional physical-monitor overrides. Leave empty or omit to follow Windows Settings numbering automatically. |
-| `terminal` | String | `"wt.exe"` | Terminal executable used by commands with `"mode": "terminal"`. |
-| `terminalProcess` | String | `"WindowsTerminal"` | Process that owns the newly opened terminal window. |
-| `terminalArguments` | Array of strings | `["-w", "new"]` | Arguments sent to that terminal before the command executable and its arguments. |
+| `terminal` | Object | Windows Terminal settings | Shared terminal window settings for commands with `"mode": "terminal"`. See [Choosing a terminal](#choosing-a-terminal) for its nested fields. |
 
 The terminal settings affect **command actions in terminal mode only**. They do not change application mappings that launch `wt.exe`, or hidden commands.
 
@@ -108,23 +109,84 @@ These settings belong inside a numbered mapping, for example inside `"4": { ... 
 
 | Keyword | Type / accepted values | Default | When to use it |
 | --- | --- | --- | --- |
-| `action` | `"application"`, `"folder"`, `"command"` | `"application"` | Chooses the kind of shortcut. Setting it explicitly makes your file easier to read. |
-| `executable` | String | Empty | Required for applications and commands. Program to launch, without command-line arguments. |
-| `process` | String | Empty | Required for applications. Process owning the window to find, usually without `.exe`. |
+| `action` | `"application"`, `"folder"`, `"command"` | Required | Must be present in every mapping; there is no default. |
+| `startMenuName` | String | Empty | Exact Start menu application name, ignoring capitalization. For application actions only. Infers launch target and window identity. |
+| `executable` | String | Empty | Required for commands, and applications without `startMenuName`. Cannot be combined with `startMenuName`. Program to launch, without command-line arguments. |
+| `process` | String | Empty | Required for applications without `startMenuName`. Process owning the window to find, usually without `.exe`. With `startMenuName`, overrides inferred process matching; Chrome/packaged app identity checks still apply. |
 | `arguments` | Array of strings | `[]` | Launch arguments for applications and commands. |
+| `launchAlways` | Boolean | `false` | For applications, invoke the executable and arguments on every press, then find and position its window. Useful for opening a specific file in an already-running editor. |
 | `selection` | `"recent"`, `"title"`, `"dedicated"` | `"recent"` | How an application mapping selects its window. |
 | `title` | String | Empty | Required when an application uses `"selection": "title"`. Exact, case-sensitive window title. |
 | `path` | String | Empty | Required for folders. Existing filesystem folder to open. |
 | `workingDirectory` | String | Empty | Optional launch working directory for applications and commands. Empty leaves it unspecified. |
-| `mode` | `"hidden"`, `"terminal"` | `"hidden"` | How a command runs. |
-| `monitor` | Integer, at least `1` | `1` | Destination display for application, folder, and terminal-command windows. |
-| `layout` | `"maximize"`, `"preserve"`, `"left"`, `"right"`, `"top"`, `"bottom"`, `"top-left"`, `"top-right"`, `"bottom-left"`, `"bottom-right"` | `"maximize"` | Window placement within the target monitor's working area. |
+| `mode` | `"hidden"`, `"terminal"` | `"hidden"` when omitted | Only allowed with `"action": "command"`. `hidden` runs without creating a console window and rejects `monitor` and `layout`; `terminal` runs in the configured terminal and allows both. Other values and `null` are rejected, as is using `mode` on application or folder mappings. |
+| `monitor` | Integer, at least `1` | `1` | Destination display for applications, folders, and commands with `"mode": "terminal"`. Rejected for hidden commands, including when `mode` is omitted. |
+| `layout` | `"maximize"`, `"preserve"`, `"left"`, `"right"`, `"top"`, `"bottom"`, `"top-left"`, `"top-right"`, `"bottom-left"`, `"bottom-right"` | `"maximize"` | Window placement within the target monitor's working area. Allowed for applications, folders, and terminal commands; rejected for hidden commands. |
 
-Settings only affect their applicable action. For example, `title` does not name a dedicated window, `selection` does not make a command reusable, and `monitor` does not affect a hidden command. Leave irrelevant settings out. Invalid `selection`, `monitor`, `layout`, or `arguments` values still fail validation even on mappings that do not use them.
+Configuration is validated strictly before any changes apply:
+
+- Every mapping requires `action`.
+- `application` requires exactly one of `startMenuName` or `executable`. Executable mappings also require `process`; Start menu mappings allow an optional nonempty process override.
+- `folder` requires `path` and only allows `action`, `path`, `monitor`, and `layout`.
+- `command` requires `executable` and allows `arguments`, `workingDirectory`, and `mode`. Only terminal commands allow `monitor` and `layout`.
+- `selection`, `launchAlways`, and `process` are application-only settings. `title` is allowed only with `selection: title`. `mode` is command-only.
+- Unknown fields, invalid values, null fields, conflicting launch sources, and duplicate properties are rejected. This includes multiple definitions of the same numpad key, even if their values are identical. Property-name duplicates are checked ignoring capitalization.
+
+One invalid mapping rejects the entire edit, preserving the active configuration. For older files, rename `app` to `startMenuName`, add missing `action` settings, remove unused titles from dedicated mappings, and remove window-placement fields from hidden commands.
 
 ## Opening and focusing applications
 
 An application mapping first looks for a suitable window. If it finds one, it places and focuses that window. Otherwise it launches `executable` with `arguments`, then waits up to 15 seconds for a matching window.
+
+## Find applications by Start menu name
+
+Use `startMenuName` to avoid looking up executable paths and process names:
+
+```json
+{
+  "4": {
+    "action": "application",
+    "startMenuName": "Google Chrome",
+    "selection": "recent",
+    "monitor": 2,
+    "layout": "maximize"
+  },
+  "8": {
+    "action": "application",
+    "startMenuName": "ChatGPT",
+    "monitor": 1,
+    "layout": "maximize"
+  }
+}
+```
+
+Right-click the tray and choose **List applications** to open `applications.json`, listing the discovered names and launch metadata. Use a complete `Name` value. Lookup ignores capitalization and surrounding spaces; it does not use substring matching, Windows Search ranking, websites, documents, or arbitrary aliases.
+
+Macaroni reads executable shortcuts in your personal and shared Start menu Programs folders, plus packaged applications in Windows' AppsFolder. Names are resolved when configuration loads. After installing or renaming an app, use **Reload configuration**. An unknown name shows nearby names; distinct entries with the same name are rejected with their launch locations instead of choosing arbitrarily. Resolution errors retain the last active configuration, just like invalid JSON. Use an explicit `executable`/`process` mapping without `startMenuName` to disambiguate.
+
+### Chrome installed web apps
+
+Chrome's **Install page as app** creates a shortcut containing its app ID and browser profile. Macaroni launches that shortcut to retain both, and matches the window's Windows app identity. For example, if your Start menu lists Gmail:
+
+```json
+{
+  "2": {
+    "action": "application",
+    "startMenuName": "Gmail",
+    "selection": "dedicated",
+    "monitor": 2,
+    "layout": "left"
+  }
+}
+```
+
+It matches that installed Gmail app and profile, rather than any window owned by `chrome.exe`. A missing or mismatched app identity does not fall back to an unrelated Chrome window. The normal `Google Chrome` name excludes installed Chrome app windows. If identical names exist under multiple profiles, use explicit configuration to disambiguate or give the shortcuts distinct Start menu names.
+
+All selection modes, dedicated-window reassignment, `monitor`, and `layout` work with `startMenuName`. `title` adds an exact title condition after identifying the app. Shortcut launch arguments and working directories are preserved when launching by name. Configured `arguments` are additional arguments. For packaged apps that need custom executable arguments, use a separate explicit `executable`/`process` mapping instead of `startMenuName`.
+
+Ordinary desktop shortcuts infer the window process from their target executable; common aliases such as `wt.exe` and `chrome_proxy.exe` are accounted for. Unusual launchers that create windows in another process may need a `process` override. Packaged apps and Chrome installed apps use their app identity instead. Existing explicit mappings continue to work and need not be converted.
+
+### Explicit application mappings
 
 ### Executable versus process
 
@@ -134,6 +196,27 @@ These have different jobs:
 - **`process`** tells Macaroni which running application's windows to look for. It is matched case-insensitively. A trailing `.exe` is accepted, but the examples omit it.
 
 They can differ: `wt.exe` launches a window owned by `WindowsTerminal`. A packaged app can be launched through `explorer.exe`, while its actual window belongs to `ChatGPT` or `TagWatch`.
+
+### Open a file and position its editor
+
+An application mapping normally sends `arguments` only when no matching window exists. Set `launchAlways` to `true` to send them every time, then apply the usual window selection, monitor, and layout. Editors such as Notepad++ normally forward the file request to an existing instance. An application that creates a new window for every invocation may still do so; this option does not force single-instance behavior. If a matching window existed, Macaroni waits up to two seconds for a short-lived launcher to hand off before selecting the window.
+
+```json
+{
+  "3": {
+    "action": "application",
+    "executable": "C:/Program Files/Notepad++/notepad++.exe",
+    "arguments": ["%LOCALAPPDATA%/Macaroni/config.json"],
+    "process": "notepad++",
+    "selection": "recent",
+    "launchAlways": true,
+    "monitor": 1,
+    "layout": "maximize"
+  }
+}
+```
+
+This sends the file request on each press, including when another tab is selected, then maximizes the selected Notepad++ window on monitor 1. Use this application mode for editor placement; `command` with `mode: hidden` does not apply `monitor` or `layout`.
 
 To find an application's process name:
 
@@ -216,7 +299,7 @@ Terminal settings or switching tabs may affect the window's displayed title. Che
 
 Keep using one chosen window until it closes. On first use, or if the tracked window has closed, adopt an existing window belonging to the configured process. If only one exists, use it; if several exist, choose the most recently focused one. When no focus history is available, window enumeration order is the fallback. Launch a new window only if no suitable existing window is available.
 
-Once adopted, that window remains dedicated even if you focus another window of the same application. Launch arguments such as `["-w", "new"]` for Windows Terminal are used only when a launch is necessary. `title` is ignored in this mode; matching is scoped to `process`.
+Once adopted, that window remains dedicated even if you focus another window of the same application. Launch arguments such as `["-w", "new"]` for Windows Terminal are used only when a launch is necessary. Do not set `title` in this mode; matching uses the configured process or Start menu application identity.
 
 The association is kept in memory for the current Macaroni session. After restarting Macaroni or changing the mapping, the next press adopts an available window again. Existing application windows are never closed by Macaroni.
 
@@ -295,20 +378,49 @@ Shell features such as pipes, redirection, aliases, and functions require a shel
 
 ## Choosing a terminal
 
-The default top-level settings are:
+The top-level `terminal` object chooses the **window application that displays a command**. A command mapping's `executable` chooses **the program to run inside that window**. These settings describe two different programs.
+
+For example, Windows Terminal (`wt.exe`) provides the window; PowerShell (`powershell.exe`) runs inside it and executes `Get-Date`. PowerShell is a shell, while Windows Terminal hosts shells and other console programs.
+
+The default terminal object is:
 
 ```json
 {
-  "terminal": "wt.exe",
-  "terminalProcess": "WindowsTerminal",
-  "terminalArguments": ["-w", "new"]
+  "terminal": {
+    "executable": "wt.exe",
+    "process": "WindowsTerminal",
+    "arguments": ["-w", "new"]
+  }
 }
 ```
 
-Merge these settings at the top level, not inside a numbered mapping. For a terminal-mode command, Macaroni constructs the launch in this order:
+Put this object at the top level, alongside `version` and `mappings`. Omitting the object or any of its fields uses the defaults below. All terminal-mode commands share it.
+
+| Field inside `terminal` | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `executable` | String | `"wt.exe"` | Terminal window application to launch. |
+| `process` | String | `"WindowsTerminal"` | Process owning the terminal window, so Macaroni can find, place, and focus it. This can differ from the launcher filename. |
+| `arguments` | Array of strings | `["-w", "new"]` | Options for the terminal window application. The defaults ask Windows Terminal to create a new window. |
+
+By comparison, this numbered mapping defines the **command inside the terminal**:
+
+```json
+{
+  "3": {
+    "action": "command",
+    "executable": "powershell.exe",
+    "arguments": ["-NoExit", "-Command", "Get-Date"],
+    "mode": "terminal",
+    "monitor": 1,
+    "layout": "maximize"
+  }
+}
+```
+
+`terminal.arguments` controls Windows Terminal; the mapping's `arguments` controls PowerShell. Macaroni constructs the launch in this order:
 
 ```text
-terminal + terminalArguments + mapping.executable + mapping.arguments
+terminal.executable + terminal.arguments + mapping.executable + mapping.arguments
 ```
 
 For the `Get-Date` example, the individual arguments are equivalent to:
@@ -318,6 +430,10 @@ wt.exe -w new powershell.exe -NoExit -Command Get-Date
 ```
 
 To use another terminal, configure its executable, the process owning its window, and any arguments needed to create a new window and accept a command executable followed by arguments. Macaroni does not automatically translate between different terminals' command-line conventions. The `workingDirectory` setting is passed to the launched process; a terminal or shell may override it with its profile settings.
+
+The `terminal` object is not used by hidden commands or by application mappings that directly open a terminal. An application mapping for your usual terminal still declares its own `startMenuName` or `executable`/`process` as usual. There is no per-mapping terminal override.
+
+Older configurations must move the old top-level `terminal` string into `terminal.executable`, `terminalProcess` into `terminal.process`, and `terminalArguments` into `terminal.arguments`. The old flat format is rejected. Nested unknown fields, duplicates, null values, and empty executable/process values are also rejected.
 
 ## Monitors and window size
 
@@ -410,7 +526,7 @@ Use a full executable path when the program is not discoverable by name. Do not 
 
 Each `arguments` array element is one argument. Macaroni handles process argument quoting. For example, use `["--profile-directory=Default", "https://example.com"]`, not one string containing both arguments. When launching an application through a shell, the shell's own syntax still applies inside its command argument.
 
-Macaroni expands `%VARIABLE%` environment references in `executable`, each argument, folder `path`, `workingDirectory`, `terminal`, and `terminalArguments`. Examples include `%USERPROFILE%`, `%LOCALAPPDATA%`, and `%TEMP%`. It does not expand them in `title` or `process`. `$env:TEMP` in a PowerShell command is interpreted by PowerShell, not Macaroni. `~` is not a Macaroni home-directory shorthand.
+Macaroni expands `%VARIABLE%` environment references in `executable`, each argument, folder `path`, `workingDirectory`, `terminal.executable`, and `terminal.arguments`. Examples include `%USERPROFILE%`, `%LOCALAPPDATA%`, and `%TEMP%`. It does not expand them in `title` or `process`. `$env:TEMP` in a PowerShell command is interpreted by PowerShell, not Macaroni. `~` is not a Macaroni home-directory shorthand.
 
 Prefer absolute folder and working-directory paths. Relative paths depend on Macaroni's launch environment, not the configuration file's directory. Setting `workingDirectory` affects a newly launched process; it does not change an already-running application's current folder.
 

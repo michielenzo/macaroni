@@ -65,6 +65,10 @@ With Num Lock off, numpad 1–9 perform configurable actions. Numpad 0 enables/d
 
 Macaroni opens or focuses applications, reuses Explorer windows for folders, and runs commands either hidden or in a configurable terminal. Each shortcut chooses a monitor and window sizing behavior.
 
+Application mappings can use a Start menu name such as `"startMenuName": "Google Chrome"` or `"startMenuName": "ChatGPT"`. **List applications** in the tray shows available names. Installed Chrome web apps retain their app/profile identity so their windows are distinguished from the browser.
+
+Every mapping must declare `action`. Application mappings require exactly one launch source: `startMenuName`, or `executable` with `process`. Folder mappings require `path`; command mappings require `executable`. Duplicate keys and fields that do not apply to the chosen action are rejected, retaining the last working configuration. The former `app` keyword is now `startMenuName`.
+
 Use `layout` to maximize, preserve normal dimensions, fill the left/right/top/bottom half, or occupy a corner quarter. Layouts respect the taskbar and skip resizing when the window already matches. This replaces the old `size` keyword.
 
 **See the [Configuration guide](CONFIGURATION.md) for every keyword, defaults, complete examples, window-selection strategies, monitor numbering, and troubleshooting.** The guide includes Windows Terminal, Chrome, ChatGPT, and tag-watch examples. The [example configuration](config.example.json) is the first-run template.
