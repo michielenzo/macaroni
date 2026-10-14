@@ -89,7 +89,7 @@ internal sealed class TrayApplication : ApplicationContext
     {
         try
         {
-            if (digit == 0) { if (!control) Toggle(); return; }
+            if (digit == 0) { if (!control) Toggle(notify: true); return; }
             var snapshot = configuration;
             if (enabled && snapshot.Mappings.TryGetValue(digit.ToString(), out var mapping))
             {
@@ -140,10 +140,14 @@ internal sealed class TrayApplication : ApplicationContext
         }
         catch (Exception ex) { Report(ex); }
     }
-    private void Toggle()
+    private void Toggle(bool notify = false)
     {
         enabled = !enabled;
         UpdateTray();
+        if (notify)
+            tray.ShowBalloonTip(3500, enabled ? "Macaroni enabled" : "Macaroni disabled",
+                enabled ? "Numpad shortcuts are active." : "Numpad shortcuts are paused. Press numpad 0 with Num Lock off to enable them again.",
+                ToolTipIcon.Info);
         try
         {
             File.WriteAllText(StatePath + ".tmp", enabled ? "true" : "false");

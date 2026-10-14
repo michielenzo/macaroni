@@ -537,6 +537,7 @@ Prefer absolute folder and working-directory paths. Relative paths depend on Mac
 - Invalid configuration at startup leaves no action mappings active until corrected. The previous valid configuration is retained only in memory during a running session, not as a persisted fallback.
 - Disabling Macaroni pauses shortcuts but does not stop configuration reloads. Key 0 and the tray can re-enable it.
 - Enabled/disabled state is stored separately in `%LOCALAPPDATA%\Macaroni\enabled.txt` and remembered across restarts. There is no JSON keyword for it.
+- Toggling with numpad 0 shows a notification stating whether Macaroni is enabled or disabled.
 - Automatic startup is controlled by **Start with Windows** in the tray, not by a JSON setting.
 - **Exit** stops Macaroni completely; numpad 0 cannot restart an exited application.
 
