@@ -8,6 +8,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Macaroni/KeyBinding.cs" Link="KeyBinding.cs" />
+    <Compile Include="../../src/Macaroni/WorkspaceRunner.cs" Link="WorkspaceRunner.cs" />
+    <Compile Include="../../src/Macaroni/ConfigurationMigration.cs" Link="ConfigurationMigration.cs" />
+    <Compile Include="../../src/Macaroni/AssignmentPalette.cs" Link="AssignmentPalette.cs" />
     <Compile Include="../../src/Macaroni/AppNames.cs" Link="AppNames.cs" />
     <Compile Include="../../src/Macaroni/AppCatalog.cs" Link="AppCatalog.cs" />
     <Compile Include="../../src/Macaroni/WindowAppIdentity.cs" Link="WindowAppIdentity.cs" />

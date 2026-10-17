@@ -75,12 +75,12 @@ internal static class AppCatalog
     internal static void Resolve(Configuration config) => AppNames.ResolveMappings(config, Read());
     internal static async Task ResolveAsync(Configuration config)
     {
-        if (!config.Mappings.Values.Any(m => !string.IsNullOrWhiteSpace(m.StartMenuName))) return;
+        if (!config.Mappings.Values.SelectMany(b => b.Actions).Any(m => !string.IsNullOrWhiteSpace(m.StartMenuName))) return;
         try { AppNames.ResolveMappings(config, await ReadAsync()); }
         catch (Exception ex)
         {
-            foreach (var key in config.Mappings.Where(p => !string.IsNullOrWhiteSpace(p.Value.StartMenuName)).Select(p => p.Key).ToArray())
-                config.Skip(key, "Could not read Start menu applications: " + ex.Message);
+            foreach (var (key, action) in config.Mappings.SelectMany(p => p.Value.Actions.Select(a => (p.Key, Action: a))).Where(p => !string.IsNullOrWhiteSpace(p.Action.StartMenuName)).ToArray())
+                config.SkipAction(key, action, "Could not read Start menu applications: " + ex.Message);
         }
     }
 }

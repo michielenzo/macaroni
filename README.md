@@ -34,6 +34,8 @@ dotnet run --project tests/Macaroni.WindowsSmoke
 
 To additionally test real activation of an already-running Windows Terminal window, append `-- --focus-terminal`. This intentionally focuses Terminal. Activation verifies the actual foreground handle. If the normal request fails and no modifier is held, it retries after a balanced Ctrl-masked Alt tap to unlock foreground activation without opening an application menu. Injected events are ignored by Macaroni's keyboard hook.
 
+`-- --explorer-restore` opens four temporary Explorer folders and checks minimized restoration, repeated placement, window stacking above the previous application, and dedicated focus. It closes only its test windows afterward. `-- --workspace-test` uses temporary test forms to check placement, focus, and dedicated assignment transfers.
+
 To uninstall, turn off **Start with Windows**, exit from the tray, and remove the published folder. User settings remain in `%LOCALAPPDATA%\Macaroni` until you remove them.
 
 ### Continuous integration
@@ -65,9 +67,11 @@ With Num Lock off, numpad 1–9 perform configurable actions. Numpad 0 enables/d
 
 Macaroni opens or focuses applications, reuses Explorer windows for folders, and runs commands either hidden or in a configurable terminal. Each shortcut chooses a monitor and window sizing behavior.
 
+Each key contains an `actions` array, so one press can restore a workspace with several windows. Actions start in parallel by default; use `execution: sequential` on a key when order matters. The action with `focus: true` receives focus as soon as its window is ready, with a final correction if a later launch steals it. Invalid or failed actions do not prevent valid siblings from running. Use dedicated selection for separate windows of the same application; duplicate recent actions on one key are rejected. Assignment pickers show ownership and transfers within the key. Optional action names make workspace assignment easier to recognize.
+
 Application mappings can use a Start menu name such as `"startMenuName": "Google Chrome"` or `"startMenuName": "ChatGPT"`. **List applications** in the tray shows available names. Installed Chrome web apps retain their app/profile identity so their windows are distinguished from the browser.
 
-Every mapping must declare `action`. Application mappings require exactly one launch source: `startMenuName`, or `executable` with `process`. Folder mappings require `path`; command mappings require `executable`. Invalid mappings and duplicate key definitions disable only the affected key; other valid keys still load. The former `app` keyword is now `startMenuName`.
+Every action must declare `action`. Application mappings require exactly one launch source: `startMenuName`, or `executable` with `process`. Folder mappings require `path`; command mappings require `executable`. Invalid actions are skipped independently; duplicate key definitions disable the affected key. The former `app` keyword is now `startMenuName`.
 
 Use `layout` to maximize, preserve normal dimensions, fill the left/right/top/bottom half, or occupy a corner quarter. Layouts respect the taskbar and skip resizing when the window already matches. This replaces the old `size` keyword.
 
@@ -75,7 +79,7 @@ Use `layout` to maximize, preserve normal dimensions, fill the left/right/top/bo
 
 Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; notifications identify skipped mappings. Invalid JSON or shared settings retain the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
 
-To switch a dedicated window, focus the desired application and press **Ctrl + its numpad key** with Num Lock off. You can also use **Dedicated windows → Choose window…** in the tray. Assignment leaves windows in place; the next normal shortcut applies placement.
+To switch a dedicated window, focus the desired application and press **Ctrl + its numpad key** with Num Lock off. A single matching action assigns directly; multiple matches open a styled command palette centered on the source window's monitor. You can also use **Dedicated windows → key → action → Choose window…** in the tray. Assignment leaves windows in place; the next normal shortcut applies placement.
 
 The tray also provides manual configuration reload, monitor identity diagnostics, startup at sign-in, logs, and exit. Monitor numbers follow the current Windows display-path order automatically; optional physical-monitor overrides are documented in the configuration guide. A window already maximized on its configured monitor is simply focused without another maximize animation.
 

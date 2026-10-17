@@ -8,6 +8,7 @@ Macaroni maps physical numpad keys to applications, folders, or commands. This g
 
 - [Where to edit](#where-to-edit)
 - [A complete example](#a-complete-example)
+- [Multiple actions on one key](#multiple-actions-on-one-key)
 - [File format and keys](#file-format-and-keys)
 - [Top-level settings](#top-level-settings)
 - [Mapping settings reference](#mapping-settings-reference)
@@ -38,37 +39,58 @@ This is a whole configuration file. Adjust the Chrome path and folder to match y
 
 ```json
 {
-  "version": 1,
-  "terminal": {
-    "executable": "wt.exe",
-    "process": "WindowsTerminal",
-    "arguments": ["-w", "new"]
-  },
-  "mappings": {
-    "4": {
-      "action": "application",
-      "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
-      "process": "chrome",
-      "selection": "recent",
-      "monitor": 2,
-      "layout": "maximize"
-    },
-    "7": {
-      "action": "application",
-      "executable": "wt.exe",
-      "process": "WindowsTerminal",
-      "arguments": ["-w", "new"],
-      "selection": "dedicated",
-      "monitor": 1,
-      "layout": "maximize"
-    },
-    "9": {
-      "action": "folder",
-      "path": "%USERPROFILE%/Documents",
-      "monitor": 1,
-      "layout": "preserve"
-    }
-  }
+	"version": 1,
+	"terminal": {
+		"executable": "wt.exe",
+		"process": "WindowsTerminal",
+		"arguments": [
+			"-w",
+			"new"
+		]
+	},
+	"mappings": {
+		"4": {
+			"actions": [
+				{
+					"action": "application",
+					"executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+					"process": "chrome",
+					"selection": "recent",
+					"monitor": 2,
+					"layout": "maximize",
+					"focus": true
+				}
+			]
+		},
+		"7": {
+			"actions": [
+				{
+					"action": "application",
+					"executable": "wt.exe",
+					"process": "WindowsTerminal",
+					"arguments": [
+						"-w",
+						"new"
+					],
+					"selection": "dedicated",
+					"monitor": 1,
+					"layout": "maximize",
+					"focus": true
+				}
+			]
+		},
+		"9": {
+			"actions": [
+				{
+					"action": "folder",
+					"path": "%USERPROFILE%/Documents",
+					"monitor": 1,
+					"layout": "preserve",
+					"focus": true
+				}
+			]
+		}
+	}
 }
 ```
 
@@ -105,17 +127,19 @@ The terminal settings affect **command actions in terminal mode only**. They do 
 
 ## Mapping settings reference
 
-These settings belong inside a numbered mapping, for example inside `"4": { ... }`.
+Each numbered key must contain an `actions` array, even for one action: `"4": { "actions": [ ... ] }`. The key also accepts optional `execution`: `"parallel"` (default) or `"sequential"`. Each array entry is an independent action; the table below describes its fields.
 
 | Keyword | Type / accepted values | Default | When to use it |
 | --- | --- | --- | --- |
 | `action` | `"application"`, `"folder"`, `"command"` | Required | Must be present in every mapping; there is no default. |
+| `name` | Nonempty string | Generated | Optional human-readable base label for the assignment palette and tray picker. |
+| `focus` | Boolean | `false` | `true` requests focus as soon as this window is ready. If a later launch steals focus, restore it after startup finishes. At most one valid action per key may have `focus: true`. Forbidden on hidden commands, including `false`. |
 | `startMenuName` | String | Empty | Exact Start menu application name, ignoring capitalization. For application actions only. Infers launch target and window identity. |
 | `executable` | String | Empty | Required for commands, and applications without `startMenuName`. Cannot be combined with `startMenuName`. Program to launch, without command-line arguments. |
 | `process` | String | Empty | Required for applications without `startMenuName`. Process owning the window to find, usually without `.exe`. With `startMenuName`, overrides inferred process matching; Chrome/packaged app identity checks still apply. |
 | `arguments` | Array of strings | `[]` | Launch arguments for applications and commands. |
 | `launchAlways` | Boolean | `false` | For applications, invoke the executable and arguments on every press, then find and position its window. Useful for opening a specific file in an already-running editor. |
-| `selection` | `"recent"`, `"title"`, `"dedicated"` | `"recent"` | How an application mapping selects its window. |
+| `selection` | `"recent"`, `"title"`, `"dedicated"` | `"recent"` | How an application mapping selects its window. Multiple `recent` actions for the same application on one key are rejected; use `dedicated` for separate windows. |
 | `title` | String | Empty | Required when an application uses `"selection": "title"`. Exact, case-sensitive window title. |
 | `path` | String | Empty | Required for folders. Existing filesystem folder to open. |
 | `workingDirectory` | String | Empty | Optional launch working directory for applications and commands. Empty leaves it unspecified. |
@@ -125,18 +149,74 @@ These settings belong inside a numbered mapping, for example inside `"4": { ... 
 
 Configuration is validated strictly before any changes apply:
 
-- Every mapping requires `action`.
+- Every key requires a nonempty `actions` array, and every action requires `action`.
 - `application` requires exactly one of `startMenuName` or `executable`. Executable mappings also require `process`; Start menu mappings allow an optional nonempty process override.
-- `folder` requires `path` and only allows `action`, `path`, `monitor`, and `layout`.
+- `folder` requires `path` and allows `action`, `path`, `monitor`, `layout`, `name`, and `focus`.
 - `command` requires `executable` and allows `arguments`, `workingDirectory`, and `mode`. Only terminal commands allow `monitor` and `layout`.
 - `selection`, `launchAlways`, and `process` are application-only settings. `title` is allowed only with `selection: title`. `mode` is command-only.
 - Unknown fields, invalid values, null fields, conflicting launch sources, and duplicate properties are rejected. This includes multiple definitions of the same numpad key, even if their values are identical. Property-name duplicates are checked ignoring capitalization.
 
-One invalid mapping disables only its key; other valid mappings in the file still load, including at startup. Duplicate definitions disable every entry for that key, rather than choosing one. Fix the entry and save to re-enable it. For older files, rename `app` to `startMenuName`, add missing `action` settings, remove unused titles from dedicated mappings, and remove window-placement fields from hidden commands.
+An invalid action disables only that entry; valid siblings on the same key and other keys still load. Malformed key structure and duplicate definitions disable the entire affected key. Multiple `focus: true` actions are all skipped with an error; unrelated non-focused actions still run. Fix and save to restore rejected entries. Duplicate properties within an action invalidate only that action.
+
+## Multiple actions on one key
+
+One press starts the actions in parallel, places each window when it becomes available, and focuses the one with `focus: true` as soon as it is ready:
+
+```json
+{
+  "1": {
+    "actions": [
+      {
+        "action": "application",
+        "startMenuName": "Google Chrome",
+        "name": "Browser",
+        "selection": "dedicated",
+        "monitor": 2,
+        "layout": "left"
+      },
+      {
+        "action": "application",
+        "startMenuName": "Visual Studio Code",
+        "name": "Editor",
+        "selection": "dedicated",
+        "monitor": 2,
+        "layout": "right",
+        "focus": true
+      }
+    ]
+  }
+}
+```
+
+Use names from **List applications** on your PC. With no `focus: true`, Macaroni makes no activation request. It preserves the foreground window during placement as far as Windows allows; launched applications can still activate themselves. Do not expect `focus: false` to suppress a launched program's own behavior. With a focus action, Macaroni checks again after all actions finish and restores that window's focus only if it was lost.
+
+Parallel execution overlaps launch waits, including multiple windows of the same application. Windows are reserved immediately when discovered, so waiting siblings cannot claim the same window. Completion order is not guaranteed, and launching many applications together may briefly increase resource use. Programs that reuse a single window still need suitable new-window launch arguments when separate windows are required.
+
+For actions that depend on each other, set `"execution": "sequential"` next to `"actions"` on that numbered key. This starts actions in array order and waits for each to finish before starting the next; a command's own process may continue running after launch.
+
+Multiple application actions using `selection: recent` for the same application on one key are all disabled with diagnostics; valid siblings still run. Otherwise, focusing one changes the recent-window order and can swap layouts on the next press. Use `selection: dedicated` for stable separate windows. Start menu aliases are checked again after resolution, and distinct installed Chrome apps remain distinct applications. The restriction applies within each key only.
+
+A failed launch or placement is reported and later actions still run. If the designated focus action fails, no other action is focused automatically. A second press while the same key is still running is ignored. Distinct actions reuse distinct windows within the workspace; two actions for the same application may need new-window launch arguments so both layouts can be satisfied. Dedicated assignments are tracked per action, not just per key, and later actions' assigned windows are reserved so earlier actions cannot adopt them.
+
+### Assignment palette and labels
+
+For **Ctrl + numpad**, Macaroni first filters this key's dedicated actions by the source window's application, including Chrome app/profile identity:
+
+- One matching action: assign immediately.
+- Several matches: show a compact command palette centered on the source window's monitor. Choose with ↑/↓ and Enter, or click a row; Esc or the close button cancels.
+- No matches: show an explanatory notification.
+
+The palette snapshots the source window before opening. Selection validates that it still exists and the configuration has not changed; assignment does not move or resize it. It identifies the current owner and marks other choices as transfers. Assigning a window transfers any other dedicated assignment for that same window on the same key. On the next press, the previous owner adopts another available window or launches one; it cannot reclaim the transferred window. Assignments on other keys are independent and can share that window. **Tray → Dedicated windows → key → action → Choose window…** also marks windows as currently assigned here, unassigned, or a transfer from the named action. Selecting a transfer performs it immediately.
+
+Labels use `name` when present; otherwise the Start menu name, executable filename without `.exe`, or folder name. Window actions append monitor and layout; commands also identify their mode, exact-title selection appends the configured title, and `focus: true` appends a focus marker. Identical labels receive their original action-position suffix (`#1`, `#2`, etc.). Long labels are shortened visually with the full text in a tooltip. The palette follows Windows light/dark preference using lightweight owner drawing, a shared system icon, and no blur or animation.
+
+### Migrating an older configuration
+
+Wrap each existing numbered entry in `"actions": [ ... ]`. To preserve its previous activation behavior, add `"focus": true` to its window-producing action. Do not add focus to hidden commands. The old flat per-key structure is rejected; Macaroni does not silently rewrite a user's file during reload. Reordering or changing dedicated actions can reset their session associations.
 
 ## Opening and focusing applications
 
-An application mapping first looks for a suitable window. If it finds one, it places and focuses that window. Otherwise it launches `executable` with `arguments`, then waits up to 15 seconds for a matching window.
+An application action first looks for a suitable window. If it finds one, it places that window. Otherwise it launches the application and waits up to 15 seconds for a matching window. Only the action with `focus: true` requests focus, as soon as its window is ready.
 
 ## Find applications by Start menu name
 
@@ -145,17 +225,27 @@ Use `startMenuName` to avoid looking up executable paths and process names:
 ```json
 {
   "4": {
-    "action": "application",
-    "startMenuName": "Google Chrome",
-    "selection": "recent",
-    "monitor": 2,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "application",
+        "startMenuName": "Google Chrome",
+        "selection": "recent",
+        "monitor": 2,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   },
   "8": {
-    "action": "application",
-    "startMenuName": "ChatGPT",
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "application",
+        "startMenuName": "ChatGPT",
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -171,11 +261,16 @@ Chrome's **Install page as app** creates a shortcut containing its app ID and br
 ```json
 {
   "2": {
-    "action": "application",
-    "startMenuName": "Gmail",
-    "selection": "dedicated",
-    "monitor": 2,
-    "layout": "left"
+    "actions": [
+      {
+        "action": "application",
+        "startMenuName": "Gmail",
+        "selection": "dedicated",
+        "monitor": 2,
+        "layout": "left",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -204,14 +299,21 @@ An application mapping normally sends `arguments` only when no matching window e
 ```json
 {
   "3": {
-    "action": "application",
-    "executable": "C:/Program Files/Notepad++/notepad++.exe",
-    "arguments": ["%LOCALAPPDATA%/Macaroni/config.json"],
-    "process": "notepad++",
-    "selection": "recent",
-    "launchAlways": true,
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "application",
+        "executable": "C:/Program Files/Notepad\u002B\u002B/notepad\u002B\u002B.exe",
+        "arguments": [
+          "%LOCALAPPDATA%/Macaroni/config.json"
+        ],
+        "process": "notepad\u002B\u002B",
+        "selection": "recent",
+        "launchAlways": true,
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -240,22 +342,36 @@ Use the returned **AppID** after `shell:AppsFolder\` in the launch argument. The
 ```json
 {
   "8": {
-    "action": "application",
-    "executable": "explorer.exe",
-    "arguments": ["shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App"],
-    "process": "ChatGPT",
-    "selection": "recent",
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "application",
+        "executable": "explorer.exe",
+        "arguments": [
+          "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App"
+        ],
+        "process": "ChatGPT",
+        "selection": "recent",
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   },
   "5": {
-    "action": "application",
-    "executable": "explorer.exe",
-    "arguments": ["shell:AppsFolder\\TagWatch_qmzd5n1yyct6t!App"],
-    "process": "TagWatch",
-    "selection": "recent",
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "application",
+        "executable": "explorer.exe",
+        "arguments": [
+          "shell:AppsFolder\\TagWatch_qmzd5n1yyct6t!App"
+        ],
+        "process": "TagWatch",
+        "selection": "recent",
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -281,14 +397,26 @@ For Windows Terminal, this example requests a fixed tab title and suppresses app
 ```json
 {
   "7": {
-    "action": "application",
-    "executable": "wt.exe",
-    "process": "WindowsTerminal",
-    "arguments": ["-w", "new", "new-tab", "--title", "Macaroni Terminal", "--suppressApplicationTitle"],
-    "selection": "title",
-    "title": "Macaroni Terminal",
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "application",
+        "executable": "wt.exe",
+        "process": "WindowsTerminal",
+        "arguments": [
+          "-w",
+          "new",
+          "new-tab",
+          "--title",
+          "Macaroni Terminal",
+          "--suppressApplicationTitle"
+        ],
+        "selection": "title",
+        "title": "Macaroni Terminal",
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -311,7 +439,7 @@ The association is kept in memory for the current Macaroni session. After restar
 
 Assignment does not move, resize, or close any window. Placement happens on the next normal shortcut press. The focused window must belong to the mapping's configured `process`; otherwise Macaroni reports the mismatch and retains the previous assignment. This shortcut only captures Ctrl combinations for dedicated application mappings. With Num Lock on or Macaroni disabled, it passes through normally. Assignment is temporarily unavailable while that mapping is opening or placing a window.
 
-You can also right-click the tray icon and select **Dedicated windows → key and current title → Choose window…**. The picker lists matching windows and marks the current choice. Process IDs and window handles distinguish identical titles. Closed windows and configuration changes are checked again before an assignment is accepted. The picker is disabled while Macaroni is disabled. Choices have the same session lifetime as automatic dedicated associations; they are not saved to the configuration file.
+You can also right-click the tray icon and select **Dedicated windows → key → action → Choose window…**. The picker lists matching windows and marks the current choice. Process IDs and window handles distinguish identical titles. Closed windows and configuration changes are checked again before an assignment is accepted. The picker is disabled while Macaroni is disabled. Choices have the same session lifetime as automatic dedicated associations; they are not saved to the configuration file. When Ctrl + numpad matches several dedicated actions, use the centered palette described above.
 
 ## Opening folders
 
@@ -320,10 +448,15 @@ Use `"action": "folder"` and an existing filesystem `path`:
 ```json
 {
   "9": {
-    "action": "folder",
-    "path": "C:/dev",
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "folder",
+        "path": "C:/dev",
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -345,10 +478,18 @@ Run without creating a console window. For example, this writes the current date
 ```json
 {
   "6": {
-    "action": "command",
-    "executable": "powershell.exe",
-    "arguments": ["-NoProfile", "-Command", "Set-Content -LiteralPath $env:TEMP\\macaroni-example.txt -Value (Get-Date)"],
-    "mode": "hidden"
+    "actions": [
+      {
+        "action": "command",
+        "executable": "powershell.exe",
+        "arguments": [
+          "-NoProfile",
+          "-Command",
+          "Set-Content -LiteralPath $env:TEMP\\macaroni-example.txt -Value (Get-Date)"
+        ],
+        "mode": "hidden"
+      }
+    ]
   }
 }
 ```
@@ -362,12 +503,21 @@ Start a new configured terminal window and run the command inside it. For exampl
 ```json
 {
   "3": {
-    "action": "command",
-    "executable": "powershell.exe",
-    "arguments": ["-NoExit", "-Command", "Get-Date"],
-    "mode": "terminal",
-    "monitor": 2,
-    "layout": "preserve"
+    "actions": [
+      {
+        "action": "command",
+        "executable": "powershell.exe",
+        "arguments": [
+          "-NoExit",
+          "-Command",
+          "Get-Date"
+        ],
+        "mode": "terminal",
+        "monitor": 2,
+        "layout": "preserve",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -407,12 +557,21 @@ By comparison, this numbered mapping defines the **command inside the terminal**
 ```json
 {
   "3": {
-    "action": "command",
-    "executable": "powershell.exe",
-    "arguments": ["-NoExit", "-Command", "Get-Date"],
-    "mode": "terminal",
-    "monitor": 1,
-    "layout": "maximize"
+    "actions": [
+      {
+        "action": "command",
+        "executable": "powershell.exe",
+        "arguments": [
+          "-NoExit",
+          "-Command",
+          "Get-Date"
+        ],
+        "mode": "terminal",
+        "monitor": 1,
+        "layout": "maximize",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -488,25 +647,30 @@ This setting was previously named `size`. Rename that key to `layout` in older c
 
 | Value | Behavior |
 | --- | --- |
-| `"maximize"` | Restore if needed, move to the target display, maximize, and focus. If already maximized on that display, only focus it; no repeated maximize animation. |
-| `"preserve"` | Use the restored window dimensions, center on the target display, and focus. Clamp dimensions to fit the display's working area. An already-maximized window is restored to its normal size. |
+| `"maximize"` | Restore if needed, move to the target display, and maximize. If already maximized there, skip resizing. Final focus requires `focus: true`. |
+| `"preserve"` | Use the restored window dimensions and center on the target display. Clamp dimensions to fit the display's working area. An already-maximized window is restored to its normal size. |
 | `"left"` / `"right"` | Left or right half: half the available width and full available height. |
 | `"top"` / `"bottom"` | Top or bottom half: full available width and half the available height. |
 | `"top-left"` / `"top-right"` | Upper-left or upper-right quarter: half the available width and height. |
 | `"bottom-left"` / `"bottom-right"` | Lower-left or lower-right quarter: half the available width and height. |
 
-`preserve` preserves normal dimensions as far as they fit, not the previous position or maximized state. All layouts use the working area, excluding space reserved for the taskbar. Matching windows are only focused, without another restore, move, or resize. Windows' invisible resize borders are accounted for so visible edges align. Applications that enforce their own minimum size may not fit a small half or quarter layout exactly.
+`preserve` preserves normal dimensions as far as they fit, not the previous position or maximized state. All layouts use the working area, excluding space reserved for the taskbar. Matching windows skip restoration, movement, and resizing. Every workspace window is brought forward, even when its layout already matches; only `focus: true` requests keyboard focus. Windows' invisible resize borders are accounted for so visible edges align. Applications that enforce their own minimum size may not fit a small half or quarter layout exactly.
 
 For example, this places Chrome in the left half of monitor 2:
 
 ```json
 {
   "4": {
-    "action": "application",
-    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
-    "process": "chrome",
-    "monitor": 2,
-    "layout": "left"
+    "actions": [
+      {
+        "action": "application",
+        "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+        "process": "chrome",
+        "monitor": 2,
+        "layout": "left",
+        "focus": true
+      }
+    ]
   }
 }
 ```
@@ -532,7 +696,7 @@ Prefer absolute folder and working-directory paths. Relative paths depend on Mac
 
 ## Reloading and saved state
 
-- Mapping validation is isolated per key. Valid mappings replace the active settings; invalid mappings are skipped and their keys behave normally. The notification reports how many mappings loaded, and the log lists each skipped key and reason.
+- Validation is isolated per action. Valid actions replace the active settings; invalid actions are skipped. A key with no valid actions behaves normally. Notifications and logs identify the key and original action position of each skipped entry. Invalid group structure and duplicate key definitions disable the entire affected key.
 - Configuration errors give the tray icon a red error symbol. Its tooltip shows enabled/disabled state plus the invalid keys (including duplicates), or “Invalid configuration file” if the file could not load. The error indicator remains when toggling Macaroni and clears after a reload with no configuration errors. Long key lists are shortened in the tooltip; the log contains full details.
 - An in-progress action keeps the settings it started with. Later presses use the new configuration.
 - The same per-key behavior applies at startup, including unknown or ambiguous Start menu names. Malformed JSON, invalid shared settings (`terminal`, `monitors`, version), or duplicate top-level properties prevent the file from loading: retain the previous configuration if running, or start with no action mappings if none has loaded yet. The previous valid configuration is retained only in memory, not as a persisted fallback.
@@ -545,6 +709,8 @@ Prefer absolute folder and working-directory paths. Relative paths depend on Mac
 ## Troubleshooting
 
 Use **Open logs** in the tray to open the settings folder, then read `macaroni.log`. Notifications summarize launch, configuration, placement, and focus errors.
+
+For troubleshooting, exit Macaroni and launch `Macaroni.exe --diagnostics`. This session additionally records selected window handles, minimized state, placement bounds, and foreground handles in `diagnostics.log`. It rotates at 256 KiB and retains one previous log. A normal restart disables this diagnostic mode.
 
 | Symptom | What to check |
 | --- | --- |

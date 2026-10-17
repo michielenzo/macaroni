@@ -7,7 +7,7 @@ internal static class AppNames
     internal static void ResolveMappings(Configuration config, IEnumerable<InstalledApp> catalog)
     {
         var apps = catalog.ToArray();
-        foreach (var (key, mapping) in config.Mappings.Where(p => !string.IsNullOrWhiteSpace(p.Value.StartMenuName)).ToArray())
+        foreach (var (key, mapping) in config.Mappings.SelectMany(p => p.Value.Actions.Select(a => (p.Key, a))).Where(p => !string.IsNullOrWhiteSpace(p.a.StartMenuName)).ToArray())
         {
             try
             {
@@ -15,8 +15,9 @@ internal static class AppNames
                 if (mapping.Installed.StrictIdentity && string.IsNullOrWhiteSpace(mapping.Installed.AppId))
                     throw new Exception($"‘{mapping.StartMenuName}’ has no usable app identity. Reinstall its Start menu shortcut or use an explicit mapping.");
             }
-            catch (Exception ex) { config.Skip(key, ex.Message); }
+            catch (Exception ex) { config.SkipAction(key, mapping, ex.Message); }
         }
+        config.ValidateRecentActions();
     }
     internal static InstalledApp Resolve(string name, IEnumerable<InstalledApp> apps)
     {

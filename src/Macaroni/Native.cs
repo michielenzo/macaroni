@@ -27,6 +27,7 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern bool ShowWindow(nint window, int command);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint window, out Rect rect);
     [DllImport("user32.dll")] internal static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] internal static extern int GetWindowLong(nint window, int index);
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int key);
     [StructLayout(LayoutKind.Sequential)] internal struct Input { public uint Type; public InputData Data; }

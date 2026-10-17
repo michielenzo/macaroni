@@ -7,6 +7,8 @@ namespace Macaroni;
 
 internal sealed class WindowActions : IDisposable
 {
+    internal Action<string>? Diagnostics { get; set; }
+    internal static string WindowState(nint window) => $"hwnd=0x{window:X}, exists={Native.IsWindow(window)}, visible={Native.IsWindowVisible(window)}, minimized={Native.IsIconic(window)}, maximized={Native.IsZoomed(window)}, foreground=0x{Native.GetForegroundWindow():X}";
     private readonly Dictionary<nint, long> recent = new();
     private readonly DedicatedWindows dedicated = new();
     private readonly HashSet<string> busy = new();
@@ -21,6 +23,14 @@ internal sealed class WindowActions : IDisposable
     }
     private static string Expand(string value) => Environment.ExpandEnvironmentVariables(value);
     private static string Identity(string key, Mapping mapping) => key + JsonSerializer.Serialize(mapping);
+    internal Dictionary<string, nint> Reservations(string key, KeyBinding binding) => binding.Actions
+        .Where(a => a.Action == "application" && a.Selection == "dedicated")
+        .Select(a => (Id: WorkspaceRunner.ActionId(key, a), Choices: DedicatedChoices(WorkspaceRunner.ActionId(key, a), a)))
+        .Where(p => p.Choices.Any(c => c.Current)).ToDictionary(p => p.Id, p => p.Choices.First(c => c.Current).Window.Handle);
+    internal void ReleaseIfAssigned(string id, Mapping mapping, nint window)
+    {
+        if (dedicated.Current(Identity(id, mapping), DedicatedCandidates(mapping)) == window) dedicated.Clear(Identity(id, mapping));
+    }
     internal (WindowCandidate Window, string Title, bool Current)[] DedicatedChoices(string key, Mapping mapping)
     {
         var candidates = DedicatedCandidates(mapping);
@@ -39,7 +49,13 @@ internal sealed class WindowActions : IDisposable
     }
     internal async Task Execute(string key, Mapping mapping, Configuration config)
     {
-        if (!busy.Add(key)) return;
+        var window = await ExecuteAction(key, mapping, config, new HashSet<nint>());
+        if (mapping.Focus && window != 0) await Focus(window);
+    }
+    internal Task Focus(nint window) => ForegroundActivation.Focus(window, lifetime.Token);
+    internal async Task<nint> ExecuteAction(string key, Mapping mapping, Configuration config, IReadOnlySet<nint> excluded)
+    {
+        if (!busy.Add(key)) return 0;
         try
         {
             if (mapping.Action == "command")
@@ -56,27 +72,28 @@ internal sealed class WindowActions : IDisposable
                     var before = AllWindows().ToHashSet();
                     var terminal = StartInfo(config.Terminal.Executable, config.Terminal.Arguments.Concat(new[] { Expand(mapping.Executable) }).Concat(mapping.Arguments), mapping.WorkingDirectory);
                     using var process = Process.Start(terminal);
-                    var window = await WaitFor(() => AllWindows().FirstOrDefault(w => !before.Contains(w) && IsProcess(w, config.Terminal.Process)));
-                    await Place(window, mapping, config);
+                    var window = await WaitFor(() => WindowClaims.Claim(AllWindows().FirstOrDefault(w => !before.Contains(w) && !excluded.Contains(w) && IsProcess(w, config.Terminal.Process)), excluded));
+                    Place(window, mapping, config);
+                    return window;
                 }
-                return;
+                return 0;
             }
             nint target;
             if (mapping.Action == "folder")
             {
                 string path = System.IO.Path.GetFullPath(Expand(mapping.Path));
                 if (!Directory.Exists(path)) throw new Exception($"Folder does not exist: {path}");
-                target = FolderWindows(path).FirstOrDefault();
+                target = WindowClaims.Claim(FolderWindows(path).FirstOrDefault(w => !excluded.Contains(w)), excluded);
                 if (target == 0)
                 {
                     Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true })?.Dispose();
-                    target = await WaitFor(() => FolderWindows(path).FirstOrDefault());
+                    target = await WaitFor(() => WindowClaims.Claim(FolderWindows(path).FirstOrDefault(w => !excluded.Contains(w)), excluded));
                 }
             }
             else
             {
                 string identity = Identity(key, mapping);
-                target = Find(mapping, identity);
+                target = Find(mapping, identity, excluded);
                 if (target == 0 || mapping.LaunchAlways)
                 {
                     using var process = StartApplication(mapping);
@@ -90,10 +107,13 @@ internal sealed class WindowActions : IDisposable
                         try { await process.WaitForExitAsync(handoff.Token); }
                         catch (OperationCanceledException) when (!lifetime.IsCancellationRequested) { }
                     }
-                    target = await WaitFor(() => Find(mapping, identity));
+                    target = await WaitFor(() => Find(mapping, identity, excluded));
                 }
             }
-            await Place(target, mapping, config);
+            Diagnostics?.Invoke($"Action {key}, layout={mapping.Layout}, before placement: {WindowState(target)}");
+            Place(target, mapping, config);
+            Diagnostics?.Invoke($"Action {key}, after placement: {WindowState(target)}, bounds={WindowPlacement.VisibleBounds(target)}");
+            return target;
         }
         finally { busy.Remove(key); }
     }
@@ -121,12 +141,12 @@ internal sealed class WindowActions : IDisposable
         start.UseShellExecute = true;
         return Process.Start(start);
     }
-    private nint Find(Mapping mapping, string identity)
+    private nint Find(Mapping mapping, string identity, IReadOnlySet<nint> excluded)
     {
         if (mapping.Selection == "dedicated")
-            return dedicated.Select(identity, DedicatedCandidates(mapping));
-        return Candidates(mapping).Where(w => mapping.Selection != "title" || Title(w) == mapping.Title)
-            .OrderByDescending(w => recent.GetValueOrDefault(w)).FirstOrDefault();
+            return WindowClaims.Claim(dedicated.Select(identity, DedicatedCandidates(mapping).Where(w => !excluded.Contains(w.Handle))), excluded);
+        return WindowClaims.Claim(Candidates(mapping).Where(w => !excluded.Contains(w) && (mapping.Selection != "title" || Title(w) == mapping.Title))
+            .OrderByDescending(w => recent.GetValueOrDefault(w)).FirstOrDefault(), excluded);
     }
     private List<WindowCandidate> DedicatedCandidates(Mapping mapping)
     {
@@ -234,11 +254,10 @@ internal sealed class WindowActions : IDisposable
         }
         throw new Exception("No matching window appeared within 15 seconds. Check process, title, and launch arguments; dedicated actions require a new window.");
     }
-    private async Task Place(nint window, Mapping mapping, Configuration config)
+    private static void Place(nint window, Mapping mapping, Configuration config)
     {
         var destination = MonitorCatalog.Resolve(mapping.Monitor, config);
-        WindowPlacement.Apply(window, mapping.Layout, destination);
-        await ForegroundActivation.Focus(window, lifetime.Token);
+        WindowPlacement.Apply(window, mapping.Layout, destination, activate: false);
     }
     public void Dispose()
     {

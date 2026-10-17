@@ -39,6 +39,11 @@ internal sealed class TrayApplication : ApplicationContext
     internal TrayApplication()
     {
         Directory.CreateDirectory(directory);
+        if (Environment.GetCommandLineArgs().Contains("--diagnostics"))
+        {
+            actions.Diagnostics = WriteDiagnostic;
+            WriteDiagnostic("Diagnostic session started.");
+        }
         _ = dispatcher.Handle;
         bool firstRun = !File.Exists(ConfigPath);
         if (firstRun) File.Copy(System.IO.Path.Combine(AppContext.BaseDirectory, "config.example.json"), ConfigPath);
@@ -102,29 +107,61 @@ internal sealed class TrayApplication : ApplicationContext
             }
         }
     }
+    private readonly WorkspaceRunner workspaces = new();
+    private AssignmentPalette? palette;
     private async void Dispatch(int digit, bool control, nint window)
     {
         try
         {
             if (digit == 0) { if (!control) Toggle(notify: true); return; }
             var snapshot = configuration;
-            if (enabled && snapshot.Mappings.TryGetValue(digit.ToString(), out var mapping))
-            {
-                if (control) Assign(digit.ToString(), mapping, window);
-                else await actions.Execute(digit.ToString(), mapping, snapshot);
-            }
+            string key = digit.ToString();
+            if (!enabled || !snapshot.Mappings.TryGetValue(key, out var binding)) return;
+            if (control) { AssignFocused(key, binding, window); return; }
+            if (workspaces.IsRunning(key)) return;
+            var reservations = actions.Reservations(key, binding);
+            actions.Diagnostics?.Invoke($"Key {key}: {binding.Actions.Count} actions; reserved=" + string.Join(",", reservations.Select(p => $"{p.Key}=0x{p.Value:X}")));
+            var failures = await workspaces.Run(key, binding, (id, action, used) => actions.ExecuteAction(id, action, snapshot, used), actions.Focus, reservations, w => Native.GetForegroundWindow() != w, WindowPlacement.RaiseWorkspace);
+            if (actions.Diagnostics != null)
+                foreach (var pair in actions.Reservations(key, binding)) actions.Diagnostics($"Key {key} completed, {pair.Key}: {WindowActions.WindowState(pair.Value)}");
+            if (failures.Count > 0 && !stopping) Report(new Exception(string.Join("\n", failures)));
         }
+        catch (OperationCanceledException) when (stopping) { }
         catch (Exception ex) { if (!stopping) Report(ex); }
     }
-    private void Assign(string key, Mapping mapping, nint window, WindowCandidate? expected = null)
+    private void AssignFocused(string key, KeyBinding binding, nint window)
+    {
+        if (workspaces.IsRunning(key)) throw new Exception($"Key {key} is still running. Try assigning again when it finishes.");
+        var matches = ActionLabels.Assignable(binding, a => WindowActions.MatchesApplication(window, a));
+        if (matches.Length == 0) throw new Exception($"The focused application does not match any dedicated action on key {key}.");
+        var candidates = matches.Select(a => actions.DedicatedChoices(WorkspaceRunner.ActionId(key, a), a).FirstOrDefault(c => c.Window.Handle == window).Window).ToArray();
+        if (matches.Length == 1) { Assign(key, binding, matches[0], window, candidates[0]); return; }
+        var allLabels = ActionLabels.For(binding);
+        var owners = actions.Reservations(key, binding);
+        string? ownerId = owners.FirstOrDefault(p => p.Value == window).Key;
+        string? ownerLabel = binding.Actions.FirstOrDefault(a => WorkspaceRunner.ActionId(key, a) == ownerId) is { } owner ? allLabels[binding.Actions.IndexOf(owner)] : null;
+        var labels = matches.Select(a => allLabels[binding.Actions.IndexOf(a)] + (WorkspaceRunner.ActionId(key, a) == ownerId ? " · currently assigned here" : ownerLabel != null ? " · transfers window" : "")).ToArray();
+        var title = new System.Text.StringBuilder(4096);
+        Native.GetWindowText(window, title, title.Capacity);
+        palette?.Close();
+        string explanation = ownerLabel == null ? "Choose an action for this window. Assignments belong to this key only."
+            : $"Assigned to {ownerLabel}. Choosing another action transfers it; the old action will use another window.";
+        palette = new AssignmentPalette(title.ToString(), labels, Screen.FromHandle(window), index => Assign(key, binding, matches[index], window, candidates[index]), explanation);
+        palette.Show();
+    }
+    private void Assign(string key, KeyBinding binding, Mapping mapping, nint window, WindowCandidate? expected = null)
     {
         try
         {
             if (!enabled) throw new Exception("Enable Macaroni before assigning a dedicated window.");
-            if (!configuration.Mappings.TryGetValue(key, out var current) || !ReferenceEquals(current, mapping))
+            if (workspaces.IsRunning(key)) throw new Exception($"Key {key} is still running. Try again when it finishes.");
+            if (!configuration.Mappings.TryGetValue(key, out var current) || !ReferenceEquals(current, binding) || !binding.Actions.Contains(mapping))
                 throw new Exception("The configuration changed. Open the window picker again.");
-            string title = actions.AssignDedicated(key, mapping, window, expected);
-            tray.ShowBalloonTip(3500, "Macaroni", $"Key {key} now uses ‘{title}’.", ToolTipIcon.Info);
+            string title = actions.AssignDedicated(WorkspaceRunner.ActionId(key, mapping), mapping, window, expected);
+            foreach (var other in binding.Actions.Where(a => !ReferenceEquals(a, mapping) && a.Action == "application" && a.Selection == "dedicated"))
+                actions.ReleaseIfAssigned(WorkspaceRunner.ActionId(key, other), other, window);
+            string label = ActionLabels.For(binding)[binding.Actions.IndexOf(mapping)];
+            tray.ShowBalloonTip(3500, "Macaroni", $"{label} now uses ‘{title}’.", ToolTipIcon.Info);
         }
         catch (Exception ex) { Report(ex); }
     }
@@ -135,23 +172,33 @@ internal sealed class TrayApplication : ApplicationContext
         dedicatedMenu.Enabled = enabled;
         try
         {
-            foreach (var (key, mapping) in configuration.Mappings.OrderBy(pair => pair.Key))
+            foreach (var (key, binding) in configuration.Mappings.OrderBy(pair => pair.Key))
             {
-                if (mapping.Action != "application" || mapping.Selection != "dedicated") continue;
-                var choices = actions.DedicatedChoices(key, mapping);
-                string title = choices.FirstOrDefault(c => c.Current).Title ?? "Not assigned";
-                var entry = new ToolStripMenuItem($"{key}: {title.Replace("&", "&&")}");
-                entry.DropDownItems.Add(new ToolStripMenuItem($"Focus a window, then Ctrl + numpad {key}") { Enabled = false });
-                var picker = new ToolStripMenuItem("Choose window…");
-                foreach (var choice in choices)
+                var keyEntry = new ToolStripMenuItem($"Key {key}");
+                var labels = ActionLabels.For(binding);
+                var owners = actions.Reservations(key, binding);
+                for (int i = 0; i < binding.Actions.Count; i++)
                 {
-                    var option = new ToolStripMenuItem($"{choice.Title.Replace("&", "&&")} (PID {choice.Window.Pid}, window {choice.Window.Handle:X})") { Checked = choice.Current };
-                    option.Click += (_, _) => Assign(key, mapping, choice.Window.Handle, choice.Window);
-                    picker.DropDownItems.Add(option);
+                    var mapping = binding.Actions[i];
+                    if (mapping.Action != "application" || mapping.Selection != "dedicated") continue;
+                    var choices = actions.DedicatedChoices(WorkspaceRunner.ActionId(key, mapping), mapping);
+                    var entry = new ToolStripMenuItem(labels[i].Replace("&", "&&"));
+                    entry.DropDownItems.Add(new ToolStripMenuItem("Current: " + (choices.FirstOrDefault(c => c.Current).Title ?? "Not assigned").Replace("&", "&&")) { Enabled = false });
+                    var picker = new ToolStripMenuItem("Choose window…");
+                    picker.DropDownItems.Add(new ToolStripMenuItem("Selecting transfers ownership within this key.") { Enabled = false });
+                    foreach (var choice in choices)
+                    {
+                        string? ownerId = owners.FirstOrDefault(p => p.Value == choice.Window.Handle).Key;
+                        var owner = binding.Actions.FirstOrDefault(a => WorkspaceRunner.ActionId(key, a) == ownerId);
+                        string hint = choice.Current ? " — currently assigned here" : owner != null ? $" — transfer from {labels[binding.Actions.IndexOf(owner)]}" : " — unassigned";
+                        var option = new ToolStripMenuItem(($"{choice.Title}{hint} (PID {choice.Window.Pid}, window {choice.Window.Handle:X})").Replace("&", "&&")) { Checked = choice.Current };
+                        option.Click += (_, _) => Assign(key, binding, mapping, choice.Window.Handle, choice.Window);
+                        picker.DropDownItems.Add(option);
+                    }
+                    if (choices.Length == 0) picker.DropDownItems.Add(new ToolStripMenuItem("No matching windows open") { Enabled = false });
+                    entry.DropDownItems.Add(picker); keyEntry.DropDownItems.Add(entry);
                 }
-                if (choices.Length == 0) picker.DropDownItems.Add(new ToolStripMenuItem("No matching windows open") { Enabled = false });
-                entry.DropDownItems.Add(picker);
-                dedicatedMenu.DropDownItems.Add(entry);
+                if (keyEntry.DropDownItems.Count > 0) dedicatedMenu.DropDownItems.Add(keyEntry); else keyEntry.Dispose();
             }
             if (dedicatedMenu.DropDownItems.Count == 0) dedicatedMenu.DropDownItems.Add(new ToolStripMenuItem("No dedicated mappings configured") { Enabled = false });
         }
@@ -232,9 +279,20 @@ internal sealed class TrayApplication : ApplicationContext
         try { File.AppendAllText(System.IO.Path.Combine(directory, "macaroni.log"), $"{DateTimeOffset.Now:O} {ex}\n"); } catch { }
         tray.ShowBalloonTip(5000, "Macaroni", ex.Message, ToolTipIcon.Warning);
     }
+    private void WriteDiagnostic(string message)
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(directory, "diagnostics.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 262144) File.Move(path, path + ".previous", true);
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O} {message}\n");
+        }
+        catch { /* Diagnostics must never prevent a shortcut from running. */ }
+    }
     protected override void ExitThreadCore()
     {
         stopping = true;
+        palette?.Close(); palette?.Dispose();
         keyboard.Dispose(); watcher.Dispose(); reload.Dispose(); actions.Dispose();
         tray.Visible = false; tray.Dispose(); dispatcher.Dispose();
         base.ExitThreadCore();

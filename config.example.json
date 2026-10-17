@@ -1,40 +1,73 @@
 {
-  // Edit %LOCALAPPDATA%/Macaroni/config.json while Macaroni runs.
-  "version": 1,
-  "terminal": {
-    "executable": "wt.exe",
-    "process": "WindowsTerminal",
-    "arguments": ["-w", "new"]
-  },
-  "mappings": {
-    "9": {
-      "action": "application",
-      "executable": "wt.exe",
-      "process": "WindowsTerminal",
-      "arguments": ["-w", "new"],
-      "selection": "recent",
-      "monitor": 1,
-      "layout": "maximize"
-    },
-    "8": {
-      "action": "folder",
-      "path": "%USERPROFILE%",
-      "monitor": 1,
-      "layout": "maximize"
-    },
-    "7": {
-      "action": "command",
-      "executable": "powershell.exe",
-      "arguments": ["-NoExit", "-Command", "Get-Date"],
-      "mode": "terminal",
-      "monitor": 1,
-      "layout": "preserve"
-    },
-    "6": {
-      "action": "command",
-      "executable": "powershell.exe",
-      "arguments": ["-NoProfile", "-Command", "Set-Content -LiteralPath $env:TEMP\\macaroni-example.txt -Value (Get-Date)"],
-      "mode": "hidden"
-    }
-  }
+	// Edit %LOCALAPPDATA%/Macaroni/config.json while Macaroni runs.
+	"version": 1,
+	"terminal": {
+		"executable": "wt.exe",
+		"process": "WindowsTerminal",
+		"arguments": [
+			"-w",
+			"new"
+		]
+	},
+	"mappings": {
+		"9": {
+			"actions": [
+				{
+					"action": "application",
+					"executable": "wt.exe",
+					"process": "WindowsTerminal",
+					"arguments": [
+						"-w",
+						"new"
+					],
+					"selection": "recent",
+					"monitor": 1,
+					"layout": "maximize",
+					"focus": true
+				}
+			]
+		},
+		"8": {
+			"actions": [
+				{
+					"action": "folder",
+					"path": "%USERPROFILE%",
+					"monitor": 1,
+					"layout": "maximize",
+					"focus": true
+				}
+			]
+		},
+		"7": {
+			"actions": [
+				{
+					"action": "command",
+					"executable": "powershell.exe",
+					"arguments": [
+						"-NoExit",
+						"-Command",
+						"Get-Date"
+					],
+					"mode": "terminal",
+					"monitor": 1,
+					"layout": "preserve",
+					"focus": true
+				}
+			]
+		},
+		"6": {
+			"actions": [
+				{
+					"action": "command",
+					"executable": "powershell.exe",
+					"arguments": [
+						"-NoProfile",
+						"-Command",
+						"Set-Content -LiteralPath $env:TEMP\\macaroni-example.txt -Value (Get-Date)"
+					],
+					"mode": "hidden"
+				}
+			]
+		}
+	}
 }

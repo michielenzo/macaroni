@@ -1,5 +1,11 @@
 using Macaroni;
 
+if (args.Length == 3 && args[0] == "--migrate")
+{
+    File.WriteAllText(args[2], ConfigurationMigration.Upgrade(File.ReadAllText(args[1])));
+    return;
+}
+
 int passed = 0;
 void Check(string name, bool success)
 {
@@ -8,32 +14,32 @@ void Check(string name, bool success)
 }
 void Reject(string name, string json)
 {
-    try { Configuration.Parse(json); }
+    try { ParseFixture(json); }
     catch { Check(name, true); return; }
     Check(name, false);
 }
 var assignments = new Dictionary<string, string> { ["1"] = "laptop", ["2"] = "external-right", ["3"] = "external-left" };
-var partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder"},"3":{"action":"command","executable":"cmd.exe"}}}""");
+var partial = LoadFixture("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder"},"3":{"action":"command","executable":"cmd.exe"}}}""");
 Check("Invalid mapping does not reject valid neighbours", partial.Mappings.Keys.SequenceEqual(["1", "3"]) && partial.Errors.Count == 1 && partial.Errors[0].Contains("Key 2"));
-partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":null,"3":"oops","4":{"action":"folder","path":"D:/","monitor":"wrong"}}}""");
+partial = LoadFixture("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":null,"3":"oops","4":{"action":"folder","path":"D:/","monitor":"wrong"}}}""");
 Check("Null, non-object and malformed field types isolated per key", partial.Mappings.Count == 1 && partial.Mappings.ContainsKey("1") && partial.Errors.Count == 3);
-partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder","path":"D:/"},"2":{"action":"folder","path":"E:/"}}}""");
+partial = LoadFixture("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder","path":"D:/"},"2":{"action":"folder","path":"E:/"}}}""");
 Check("Every duplicate of a key disabled without rejecting other keys", partial.Mappings.Count == 1 && !partial.Mappings.ContainsKey("2") && partial.Errors[0].Contains("duplicate"));
-partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/","PATH":"D:/"},"2":{"action":"folder","path":"E:/"}}}""");
+partial = LoadFixture("""{"mappings":{"1":{"action":"folder","path":"C:/","PATH":"D:/"},"2":{"action":"folder","path":"E:/"}}}""");
 Check("Duplicate mapping fields only disable their key", partial.Mappings.ContainsKey("2") && !partial.Mappings.ContainsKey("1"));
-partial = Configuration.Load("""{"mappings":{"1":{"action":"application","startMenuName":"Missing app"},"2":{"action":"folder","path":"C:/"},"3":{"action":"application","startMenuName":"Google Chrome"}}}""");
+partial = LoadFixture("""{"mappings":{"1":{"action":"application","startMenuName":"Missing app"},"2":{"action":"folder","path":"C:/"},"3":{"action":"application","startMenuName":"Google Chrome"}}}""");
 AppNames.ResolveMappings(partial, [new InstalledApp("Google Chrome", "chrome.lnk", "chrome", "Chrome", false, "chrome.exe")]);
 Check("Unresolved Start menu name only disables its key", partial.Mappings.ContainsKey("2") && partial.Mappings.ContainsKey("3") && !partial.Mappings.ContainsKey("1") && partial.Errors[0].Contains("Key 1"));
-partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"}}}""");
+partial = LoadFixture("""{"mappings":{"1":{"action":"folder","path":"C:/"}}}""");
 Check("Fixed mapping is restored on next load", partial.Mappings.ContainsKey("1") && partial.Errors.Count == 0);
 bool unparseable = false;
-try { Configuration.Load("{\"mappings\":"); } catch { unparseable = true; }
+try { LoadFixture("{\"mappings\":"); } catch { unparseable = true; }
 Check("Malformed JSON still rejects the file", unparseable);
 bool duplicateRoot = false;
-try { Configuration.Load("""{"mappings":{},"Mappings":{}}"""); } catch { duplicateRoot = true; }
+try { LoadFixture("""{"mappings":{},"Mappings":{}}"""); } catch { duplicateRoot = true; }
 Check("Ambiguous top-level settings reject the file", duplicateRoot);
-Check("Omitted terminal object retains Windows Terminal defaults", Configuration.Parse("{}").Terminal.Executable == "wt.exe");
-Check("Structured terminal settings accepted", Configuration.Parse("""{"terminal":{"executable":"other.exe","process":"other","arguments":["--new"]}}""").Terminal.Arguments.SequenceEqual(["--new"]));
+Check("Omitted terminal object retains Windows Terminal defaults", ParseFixture("{}").Terminal.Executable == "wt.exe");
+Check("Structured terminal settings accepted", ParseFixture("""{"terminal":{"executable":"other.exe","process":"other","arguments":["--new"]}}""").Terminal.Arguments.SequenceEqual(["--new"]));
 Reject("Null terminal object rejected", """{"terminal":null}""");
 Reject("Old string terminal rejected", """{"terminal":"wt.exe"}""");
 Reject("Old flat terminal process rejected", """{"terminalProcess":"WindowsTerminal"}""");
@@ -60,8 +66,8 @@ Reject("Null optional properties rejected", """{"mappings":{"4":{"action":"appli
 var browser = new InstalledApp("Google Chrome", "chrome.lnk", "chrome", "Chrome", false, "chrome.exe");
 var webApp = new InstalledApp("Mail", "mail.lnk", "chrome", "Chrome._crx_mail.Profile2", true, "chrome_proxy.exe");
 Check("App names match full name ignoring case and surrounding spaces", AppNames.Resolve(" google CHROME ", [browser, webApp]) == browser);
-Check("App-only configuration accepted", Configuration.Parse("""{"mappings":{"4":{"action":"application","startMenuName":"Google Chrome"}}}""").Mappings["4"].StartMenuName == "Google Chrome");
-Check("App process override accepted", Configuration.Parse("""{"mappings":{"4":{"action":"application","startMenuName":"Example","process":"helper"}}}""").Mappings["4"].Process == "helper");
+Check("App-only configuration accepted", ParseFixture("""{"mappings":{"4":{"action":"application","startMenuName":"Google Chrome"}}}""").Mappings["4"].Actions[0].StartMenuName == "Google Chrome");
+Check("App process override accepted", ParseFixture("""{"mappings":{"4":{"action":"application","startMenuName":"Example","process":"helper"}}}""").Mappings["4"].Actions[0].Process == "helper");
 Reject("App lookup disallowed for command actions", """{"mappings":{"4":{"action":"command","startMenuName":"Chrome","executable":"chrome.exe"}}}""");
 bool missingApp = false;
 try { AppNames.Resolve("Googl Chrom", [browser, webApp]); } catch (Exception ex) { missingApp = ex.Message.Contains("Google Chrome"); }
@@ -74,8 +80,8 @@ Check("Chrome app matches exact profile identity", AppNames.IdentityMatches(webA
 Check("Chrome app rejects regular browser", !AppNames.IdentityMatches(webApp, "Chrome"));
 Check("Chrome app rejects another profile", !AppNames.IdentityMatches(webApp, "Chrome._crx_mail.Default"));
 Check("Chrome app rejects missing identity", !AppNames.IdentityMatches(webApp, ""));
-Check("Applications reuse windows by default", !Configuration.Parse("""{"mappings":{"3":{"action":"application","executable":"editor.exe","process":"editor"}}}""").Mappings["3"].LaunchAlways);
-Check("Applications can resend file arguments on each press", Configuration.Parse("""{"mappings":{"3":{"action":"application","executable":"editor.exe","process":"editor","arguments":["config.json"],"launchAlways":true}}}""").Mappings["3"].LaunchAlways);
+Check("Applications reuse windows by default", !ParseFixture("""{"mappings":{"3":{"action":"application","executable":"editor.exe","process":"editor"}}}""").Mappings["3"].Actions[0].LaunchAlways);
+Check("Applications can resend file arguments on each press", ParseFixture("""{"mappings":{"3":{"action":"application","executable":"editor.exe","process":"editor","arguments":["config.json"],"launchAlways":true}}}""").Mappings["3"].Actions[0].LaunchAlways);
 Reject("launchAlways must be boolean", """{"mappings":{"3":{"action":"application","executable":"editor.exe","process":"editor","launchAlways":"true"}}}""");
 var area = new System.Drawing.Rectangle(-1001, -801, 1001, 801);
 var halfLeft = Layouts.Bounds("left", area, default);
@@ -91,7 +97,7 @@ Check("Preserve clamps oversized window to work area", Layouts.Bounds("preserve"
 Check("Identical bounds skip repositioning", Layouts.Matches(area, area));
 Check("Moved window needs repositioning", !Layouts.Matches(area, new(area.X + 10, area.Y, area.Width, area.Height)));
 foreach (string layout in Layouts.Names)
-    Check($"Accept layout {layout}", Configuration.Parse("{\"mappings\":{\"4\":{\"action\":\"folder\",\"path\":\"C:/\",\"layout\":\"" + layout + "\"}}}").Mappings["4"].Layout == layout);
+    Check($"Accept layout {layout}", ParseFixture("{\"mappings\":{\"4\":{\"action\":\"folder\",\"path\":\"C:/\",\"layout\":\"" + layout + "\"}}}").Mappings["4"].Actions[0].Layout == layout);
 Reject("Unknown layout rejected", """{"mappings":{"4":{"action":"folder","path":"C:/","layout":"diagonal"}}}""");
 Reject("Old size keyword rejected after rename", """{"mappings":{"4":{"action":"folder","path":"C:/","size":"left"}}}""");
 var dedicated = new DedicatedWindows();
@@ -108,7 +114,7 @@ Check("Reassignment switches without closing windows", manual.Assign("7", second
 Check("Closed or mismatched selection rejected", !manual.Assign("7", thirdWindow, [firstWindow, secondWindow]));
 Check("Rejected assignment preserves current window", manual.Current("7", [firstWindow, secondWindow]) == secondWindow.Handle);
 Check("Recycled process identity rejected", !manual.Assign("7", secondWindow, [secondWindow with { Started = 9999 }]));
-var shortcuts = new Configuration { Mappings = new() { ["7"] = new Mapping { Action = "application", Selection = "dedicated" }, ["8"] = new Mapping() } };
+var shortcuts = new Configuration { Mappings = new() { ["7"] = new KeyBinding { Actions = [new Mapping { Action = "application", Selection = "dedicated" }] }, ["8"] = new KeyBinding { Actions = [new Mapping()] } } };
 Check("Ctrl dedicated captures assignment", ShortcutPolicy.Capture(7, true, true, shortcuts));
 Check("Ctrl recent passes through", !ShortcutPolicy.Capture(8, true, true, shortcuts));
 Check("Disabled Ctrl shortcut passes through", !ShortcutPolicy.Capture(7, true, false, shortcuts));
@@ -147,7 +153,7 @@ Reject("Null arguments", """{"mappings":{"9":{"action":"command","executable":"c
 Reject("Invalid monitor", """{"mappings":{"9":{"action":"folder","path":"C:\\","monitor":0}}}""");
 Reject("Incomplete save", "{\"mappings\":");
 Reject("Misspelled setting", """{"monitro":2}""");
-Check("Comments and trailing commas", Configuration.Parse("{ /* comment */ \"version\":1, }").Version == 1);
+Check("Comments and trailing commas", ParseFixture("{ /* comment */ \"version\":1, }").Version == 1);
 var p = new KeyPolicy();
 Check("Mapped press fires", p.Handle(0x49, true, false, true) == (true, true));
 Check("Held key does not repeat", p.Handle(0x49, true, false, true) == (true, false));
@@ -158,5 +164,113 @@ Check("Pass-through release", p.Handle(0x49, false, false, true) == (false, fals
 Check("Disabled or unmapped key passes through", p.Handle(0x48, true, false, false) == (false, false));
 Check("Toggle can fire while other keys disabled", p.Handle(0x52, true, false, true) == (true, true));
 Check("Toggle does not repeat", p.Handle(0x52, true, false, true) == (true, false));
-if (args.Length > 0) Check("Example configuration", Configuration.Parse(File.ReadAllText(args[0])).Mappings.Count == 4);
+if (args.Length > 0) Check("Example configuration", ParseFixture(File.ReadAllText(args[0])).Mappings.Count == 4);
+var grouped = Configuration.Parse("""{"mappings":{"1":{"actions":[{"action":"application","startMenuName":"Chrome","layout":"left","focus":true},{"action":"application","startMenuName":"Code","layout":"right"}]}}}""");
+Check("Two actions per key accepted", grouped.Mappings["1"].Actions.Count == 2 && grouped.Mappings["1"].Actions[0].Focus && !grouped.Mappings["1"].Actions[1].Focus);
+var mixed = Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"folder","path":"C:/"},{"action":"oops"},{"action":"folder","path":"D:/"}]}}}""");
+Check("Invalid action does not disable siblings on the same key", mixed.Mappings["1"].Actions.Count == 2 && mixed.Mappings["1"].Actions[1].Position == 2 && mixed.Errors.Count == 1);
+var conflict = Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"folder","path":"C:/","focus":true},{"action":"folder","path":"D:/","focus":true},{"action":"folder","path":"E:/"}]}}}""");
+Check("Conflicting focus actions rejected while valid siblings remain", conflict.Mappings["1"].Actions.Count == 1 && conflict.Errors.Count == 2);
+Check("Missing focus makes no focus request", !Configuration.Parse("""{"mappings":{"1":{"actions":[{"action":"folder","path":"C:/"}]}}}""").Mappings["1"].Actions[0].Focus);
+Check("Multiple focus false values allowed", Configuration.Parse("""{"mappings":{"1":{"actions":[{"action":"folder","path":"C:/","focus":false},{"action":"folder","path":"D:/","focus":false}]}}}""").Mappings["1"].Actions.Count == 2);
+void RejectNew(string name, string json) { try { Configuration.Parse(json); } catch { Check(name, true); return; } Check(name, false); }
+RejectNew("Legacy single-action structure is rejected", """{"mappings":{"1":{"action":"folder","path":"C:/"}}}""");
+RejectNew("Empty action list rejected", """{"mappings":{"1":{"actions":[]}}}""");
+RejectNew("Hidden commands reject focus even false", """{"mappings":{"1":{"actions":[{"action":"command","executable":"cmd.exe","focus":false}]}}}""");
+RejectNew("Focus must be boolean", """{"mappings":{"1":{"actions":[{"action":"folder","path":"C:/","focus":"yes"}]}}}""");
+var duplicateGroups = Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"folder","path":"C:/"}]},"1":{"actions":[{"action":"folder","path":"D:/"}]},"2":{"actions":[{"action":"folder","path":"E:/"}]}}}""");
+Check("Duplicate key groups disabled without choosing last", !duplicateGroups.Mappings.ContainsKey("1") && duplicateGroups.Mappings.ContainsKey("2"));
+var runner = new WorkspaceRunner();
+var order = new List<string>();
+var runBinding = new KeyBinding { Actions = [new Mapping { Action="folder", Path="C:/", Name="first", Focus=true, Position=0 }, new Mapping { Action="folder", Path="D:/", Name="second", Position=1 }] };
+var failures = await runner.Run("1", runBinding, (id, action, used) => { order.Add(action.Name); if (action.Position == 1) Check("Second action excludes first window", used.Contains(100)); return Task.FromResult((nint)(100 + action.Position)); }, window => { order.Add("focus:"+window); return Task.CompletedTask; });
+Check("Designated focus happens as soon as its window is ready", order.SequenceEqual(["first","focus:100","second"]) && failures.Count == 0);
+order.Clear();
+failures = await runner.Run("1", runBinding, (id, action, used) => { order.Add(action.Name); if (action.Position == 0) throw new Exception("test failure"); return Task.FromResult((nint)200); }, window => { order.Add("focus"); return Task.CompletedTask; });
+Check("Failed action does not stop siblings or focus wrong window", order.SequenceEqual(["first","second"]) && failures.Count == 1);
+runBinding.Actions[0].Focus=false; order.Clear();
+await runner.Run("1", runBinding, (id, action, used) => Task.FromResult((nint)200), window => { order.Add("focus"); return Task.CompletedTask; });
+Check("No explicit focus produces no activation request", order.Count == 0);
+var gate = new TaskCompletionSource<nint>(); int executions=0;
+var pending = runner.Run("1", new KeyBinding { Actions=[new Mapping { Action="folder", Path="C:/" }] }, (id,a,used) => { executions++; return gate.Task; }, w=>Task.CompletedTask);
+await runner.Run("1", runBinding, (id,a,used) => { executions++; return Task.FromResult((nint)0); }, w=>Task.CompletedTask);
+gate.SetResult(1); await pending;
+Check("Repeat press during workspace startup does not duplicate actions", executions==1 && !runner.IsRunning("1"));
+var labelsBinding = new KeyBinding { Actions = [new Mapping {Action="application",Executable="C:/tools/wt.exe",Selection="dedicated",Position=0}, new Mapping {Action="application",Executable="C:/tools/wt.exe",Selection="dedicated",Position=1}] };
+var labels=ActionLabels.For(labelsBinding);
+Check("Identical labels use original action positions", labels[0].EndsWith("#1") && labels[1].EndsWith("#2"));
+labelsBinding.Actions[0].Name="Project terminal"; labelsBinding.Actions[0].Layout="left"; labelsBinding.Actions[0].Focus=true;
+Check("Custom label includes layout and focus", ActionLabels.For(labelsBinding)[0].Contains("Project terminal — monitor 1, left · focus"));
+labelsBinding.Actions[0].Process="chrome"; labelsBinding.Actions[1].Process="Code";
+Check("Different dedicated apps route directly to matching action", ActionLabels.Assignable(labelsBinding,a=>a.Process=="Code").Length==1);
+labelsBinding.Actions[0].Process="Code";
+Check("Same dedicated app with two actions requires palette", ActionLabels.Assignable(labelsBinding,a=>a.Process=="Code").Length==2);
+Check("Unrelated application has no assignment target", ActionLabels.Assignable(labelsBinding,a=>a.Process=="notepad").Length==0);
+var migrated=Configuration.Parse(ConfigurationMigration.Upgrade("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"command","executable":"cmd.exe"}}}"""));
+Check("Migration preserves window focus and excludes hidden-command focus", migrated.Mappings["1"].Actions[0].Focus && !migrated.Mappings["2"].Actions[0].Focus);
+var reserved = new Dictionary<string,nint> { ["1/1"] = 999 };
+bool reservationSeen=false;
+await runner.Run("1",runBinding,(id,action,used)=> { if(action.Position==0) reservationSeen=used.Contains(999); return Task.FromResult((nint)(800+action.Position)); },w=>Task.CompletedTask,reserved);
+Check("Later dedicated windows reserved against earlier adoption",reservationSeen);
+var sameKey=Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"application","startMenuName":"Missing"},{"action":"application","startMenuName":"Google Chrome"}]}}}""");
+AppNames.ResolveMappings(sameKey,[browser]);
+Check("Start menu resolution errors isolated within one workspace",sameKey.Mappings["1"].Actions.Count==1 && sameKey.Mappings["1"].Actions[0].Position==1 && sameKey.Errors.Count==1);
+var duplicates = Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"application","executable":"wt.exe","process":"WindowsTerminal"},{"action":"application","executable":"wt.exe","process":"windowsterminal.exe"},{"action":"folder","path":"C:/"}]}}}""");
+Check("Duplicate recent applications rejected without rejecting valid siblings", duplicates.Mappings["1"].Actions.Count==1 && duplicates.Errors.Count==2);
+var aliases = Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"application","startMenuName":"Google Chrome"},{"action":"application","executable":"chrome.exe","process":"chrome.exe"}]}}}""");
+AppNames.ResolveMappings(aliases,[browser]);
+Check("Resolved Start menu aliases cannot bypass duplicate recent validation", !aliases.Mappings.ContainsKey("1") && aliases.Errors.Count==2);
+var distinctApps = Configuration.Load("""{"mappings":{"1":{"actions":[{"action":"application","startMenuName":"Google Chrome"},{"action":"application","startMenuName":"Mail"}]}}}""");
+AppNames.ResolveMappings(distinctApps,[browser,webApp]);
+Check("Chrome browser and installed Chrome app are distinct recent targets", distinctApps.Errors.Count==0 && distinctApps.Mappings["1"].Actions.Count==2);
+RejectNew("Invalid execution mode rejected", """{"mappings":{"1":{"execution":"fast","actions":[{"action":"folder","path":"C:/"}]}}}""");
+Check("Sequential execution accepted", Configuration.Parse("""{"mappings":{"1":{"execution":"sequential","actions":[{"action":"folder","path":"C:/"}]}}}""").Mappings["1"].Execution=="sequential");
+var parallelBinding = new KeyBinding { Actions=[new Mapping {Action="application",Process="first",Position=0,Focus=true},new Mapping {Action="application",Process="second",Position=1}] };
+var firstReady = new TaskCompletionSource<nint>();
+var secondReady = new TaskCompletionSource<nint>();
+var focusReady = new TaskCompletionSource();
+var starts = new List<int>();
+var parallelRun = runner.Run("3",parallelBinding,(id,a,used)=> { starts.Add(a.Position); return a.Position==0?firstReady.Task:secondReady.Task; },w=> { focusReady.SetResult();return Task.CompletedTask; });
+Check("Independent applications start before either finishes",starts.SequenceEqual([0,1]));
+firstReady.SetResult(400);
+await focusReady.Task.WaitAsync(TimeSpan.FromSeconds(3));
+Check("Focus does not wait for the slower sibling",!parallelRun.IsCompleted && !secondReady.Task.IsCompleted);
+secondReady.SetResult(401); await parallelRun;
+parallelBinding.Execution="sequential";
+firstReady=new TaskCompletionSource<nint>();secondReady=new TaskCompletionSource<nint>();starts.Clear();
+var secondStarted=new TaskCompletionSource();
+var sequentialRun=runner.Run("3",parallelBinding,(id,a,used)=>{starts.Add(a.Position);if(a.Position==1)secondStarted.SetResult();return a.Position==0?firstReady.Task:secondReady.Task;},w=>Task.CompletedTask);
+Check("Sequential override waits before starting next application",starts.SequenceEqual([0]));
+firstReady.SetResult(400);
+await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+Check("Sequential override starts next application after first finishes",starts.SequenceEqual([0,1]));
+secondReady.SetResult(401);await sequentialRun;
+parallelBinding.Execution="parallel";parallelBinding.Actions[1].Process="FIRST.exe";
+firstReady=new TaskCompletionSource<nint>();secondReady=new TaskCompletionSource<nint>();starts.Clear();
+var liveViews=new List<IReadOnlySet<nint>>();
+var laneRun=runner.Run("3",parallelBinding,(id,a,used)=>{starts.Add(a.Position);liveViews.Add(used);return a.Position==0?firstReady.Task:secondReady.Task;},w=>Task.CompletedTask);
+Check("Same-process launches can overlap",starts.SequenceEqual([0,1]));
+Check("First launcher atomically claims its newly discovered window",WindowClaims.Claim(400,liveViews[0])==400);
+Check("Already waiting sibling sees and cannot claim that window",liveViews[1].Contains(400) && WindowClaims.Claim(400,liveViews[1])==0);
+Check("Sibling claims a distinct window",WindowClaims.Claim(401,liveViews[1])==401);
+firstReady.SetResult(400);secondReady.SetResult(401);await laneRun;
+int activations=0;
+var recoverBinding=new KeyBinding {Actions=[new Mapping {Action="folder",Focus=true}]};
+await runner.Run("5",recoverBinding,(id,a,used)=>Task.FromResult((nint)900),w=>{activations++;return Task.CompletedTask;},focusWasLost:w=>true);
+Check("Focus is restored after startup if another application stole it",activations==2);
+activations=0;
+await runner.Run("5",recoverBinding,(id,a,used)=>Task.FromResult((nint)900),w=>{activations++;return Task.CompletedTask;},focusWasLost:w=>false);
+Check("No redundant final activation when focus stayed on designated window",activations==1);
+var presentationOrder = new List<string>();
+var presentationBinding = new KeyBinding { Actions = [new Mapping { Action="folder",Position=0,Focus=true }, new Mapping { Action="folder",Position=1 }] };
+await runner.Run("6",presentationBinding,(id,a,used)=>Task.FromResult((nint)(700+a.Position)),w=>{presentationOrder.Add("focus");return Task.CompletedTask;},present:(windows,focus)=>
+{
+    Check("Workspace presentation receives every placed window and designated focus",windows.SequenceEqual(new nint[]{700,701}) && focus==700);
+    presentationOrder.Add("present");
+});
+Check("Workspace stacking completes after designated focus",presentationOrder.SequenceEqual(["focus","present"]));
 Console.WriteLine($"{passed} checks passed.");
+
+string Fixture(string json) { try { return ConfigurationMigration.Upgrade(json); } catch { return json; } }
+Configuration ParseFixture(string json) => Configuration.Parse(Fixture(json));
+Configuration LoadFixture(string json) => Configuration.Load(Fixture(json));

@@ -6,6 +6,6 @@ internal static class ShortcutPolicy
     {
         if (digit == 0) return !control;
         if (!enabled || !config.Mappings.TryGetValue(digit.ToString(), out var mapping)) return false;
-        return !control || mapping.Action == "application" && mapping.Selection == "dedicated";
+        return !control || mapping.Actions.Any(a => a.Action == "application" && a.Selection == "dedicated");
     }
 }

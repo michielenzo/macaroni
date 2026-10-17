@@ -4,6 +4,28 @@ namespace Macaroni;
 
 internal static class WindowPlacement
 {
+    [StructLayout(LayoutKind.Sequential)] private struct Placement
+    {
+        public uint Length, Flags, Show;
+        public Point Min, Max;
+        public Native.Rect Normal;
+    }
+    [DllImport("user32.dll")] private static extern bool GetWindowPlacement(nint window, ref Placement placement);
+    [DllImport("user32.dll")] private static extern bool SetWindowPlacement(nint window, ref Placement placement);
+    private static void Show(nint window, uint command, bool activate)
+    {
+        if (activate) { Native.ShowWindow(window, (int)command); return; }
+        var placement = new Placement { Length = (uint)Marshal.SizeOf<Placement>() };
+        if (!GetWindowPlacement(window, ref placement)) throw new Exception("Could not read window state.");
+        placement.Show = command == 9 ? 4u : command;
+        nint previous = Native.GetForegroundWindow();
+        if (!SetWindowPlacement(window, ref placement)) throw new Exception("Could not change window state.");
+        // Windows can activate a window while changing it to maximized even
+        // through SetWindowPlacement. Preserve the user's active window; the
+        // workspace runner handles the designated focus action separately.
+        if (previous != 0 && previous != window && Native.IsWindow(previous) && Native.GetForegroundWindow() != previous)
+            Native.SetForegroundWindow(previous);
+    }
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, uint attribute, out Native.Rect value, int size);
 
     private static Rectangle Outer(nint window)
@@ -20,13 +42,16 @@ internal static class WindowPlacement
             return Rectangle.FromLTRB(frame.Left, frame.Top, frame.Right, frame.Bottom);
         return Outer(window);
     }
-    internal static bool Apply(nint window, string layout, Screen destination)
+    internal static bool Apply(nint window, string layout, Screen destination, bool activate = true)
     {
         if (layout == "maximize" && Native.IsZoomed(window) && !Native.IsIconic(window) && Screen.FromHandle(window).DeviceName == destination.DeviceName)
+        {
+            RaiseWithoutActivation(window);
             return false;
+        }
 
         bool restored = Native.IsIconic(window) || Native.IsZoomed(window);
-        if (restored) Native.ShowWindow(window, 9);
+        if (restored) Show(window, 9, activate);
         var visible = VisibleBounds(window);
         var wanted = Layouts.Bounds(layout == "maximize" ? "preserve" : layout, destination.WorkingArea, visible.Size);
         bool changed = restored;
@@ -41,7 +66,34 @@ internal static class WindowPlacement
             changed = true;
             visible = VisibleBounds(window);
         }
-        if (layout == "maximize" && !Native.IsZoomed(window)) { Native.ShowWindow(window, 3); changed = true; }
+        if (layout == "maximize" && !Native.IsZoomed(window)) { Show(window, 3, activate); changed = true; }
+        RaiseWithoutActivation(window);
         return changed;
+    }
+    private static void RaiseWithoutActivation(nint window)
+    {
+        // Correct geometry does not mean the window is visible to the user:
+        // another application may cover it. Raise every workspace member even
+        // on an otherwise unchanged layout, without moving/resizing or taking
+        // keyboard focus (HWND_TOP; SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE).
+        if (!Native.SetWindowPos(window, 0, 0, 0, 0, 0, 0x13))
+            throw new Exception("Windows refused to bring the workspace window forward.");
+        // Some shell windows ignore an ordinary HWND_TOP move without
+        // activation. A temporary topmost transition raises them reliably;
+        // immediately remove it, preserving pre-existing always-on-top state.
+        if ((Native.GetWindowLong(window, -20) & 0x8) == 0)
+        {
+            if (!Native.SetWindowPos(window, -1, 0, 0, 0, 0, 0x13)) throw new Exception("Windows refused to raise the workspace window.");
+            if (!Native.SetWindowPos(window, -2, 0, 0, 0, 0, 0x13)) throw new Exception("Windows refused to restore normal window stacking.");
+        }
+    }
+    internal static void RaiseWorkspace(IReadOnlyList<nint> windows, nint focus)
+    {
+        // Once focus has settled, keep siblings together immediately behind the
+        // focus window. Raising each independently during placement can leave
+        // the previously active app interleaved between workspace members.
+        foreach (nint window in windows.Where(w => w != focus && Native.IsWindow(w)))
+            RaiseWithoutActivation(window);
+        if (focus != 0 && Native.IsWindow(focus)) RaiseWithoutActivation(focus);
     }
 }

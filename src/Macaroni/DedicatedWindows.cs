@@ -5,6 +5,7 @@ internal readonly record struct WindowCandidate(nint Handle, uint Pid, long Star
 internal sealed class DedicatedWindows
 {
     private readonly Dictionary<string, WindowCandidate> tracked = new();
+    internal void Clear(string mapping) => tracked.Remove(mapping);
     internal nint Current(string mapping, IEnumerable<WindowCandidate> candidates) =>
         tracked.TryGetValue(mapping, out var current) && candidates.Any(w => SameWindow(w, current)) ? current.Handle : 0;
 
