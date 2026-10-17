@@ -23,6 +23,7 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint process);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetWindowText(nint window, StringBuilder text, int count);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(nint window, StringBuilder name, int count);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(nint window, int command);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint window, out Rect rect);
     [DllImport("user32.dll")] internal static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);

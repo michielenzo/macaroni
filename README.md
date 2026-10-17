@@ -67,13 +67,13 @@ Macaroni opens or focuses applications, reuses Explorer windows for folders, and
 
 Application mappings can use a Start menu name such as `"startMenuName": "Google Chrome"` or `"startMenuName": "ChatGPT"`. **List applications** in the tray shows available names. Installed Chrome web apps retain their app/profile identity so their windows are distinguished from the browser.
 
-Every mapping must declare `action`. Application mappings require exactly one launch source: `startMenuName`, or `executable` with `process`. Folder mappings require `path`; command mappings require `executable`. Duplicate keys and fields that do not apply to the chosen action are rejected, retaining the last working configuration. The former `app` keyword is now `startMenuName`.
+Every mapping must declare `action`. Application mappings require exactly one launch source: `startMenuName`, or `executable` with `process`. Folder mappings require `path`; command mappings require `executable`. Invalid mappings and duplicate key definitions disable only the affected key; other valid keys still load. The former `app` keyword is now `startMenuName`.
 
 Use `layout` to maximize, preserve normal dimensions, fill the left/right/top/bottom half, or occupy a corner quarter. Layouts respect the taskbar and skip resizing when the window already matches. This replaces the old `size` keyword.
 
 **See the [Configuration guide](CONFIGURATION.md) for every keyword, defaults, complete examples, window-selection strategies, monitor numbering, and troubleshooting.** The guide includes Windows Terminal, Chrome, ChatGPT, and tag-watch examples. The [example configuration](config.example.json) is the first-run template.
 
-Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; invalid edits keep the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
+Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; notifications identify skipped mappings. Invalid JSON or shared settings retain the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
 
 To switch a dedicated window, focus the desired application and press **Ctrl + its numpad key** with Num Lock off. You can also use **Dedicated windows → Choose window…** in the tray. Assignment leaves windows in place; the next normal shortcut applies placement.
 

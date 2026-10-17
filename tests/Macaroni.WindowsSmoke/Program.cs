@@ -7,10 +7,30 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Contains("--partial-config"))
+        {
+            var candidate = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder"},"3":{"action":"application","startMenuName":"Macaroni missing-app test 12345"},"4":{"action":"application","startMenuName":"Google Chrome"}}}""");
+            AppCatalog.Resolve(candidate);
+            if (!candidate.Mappings.Keys.SequenceEqual(["1", "4"]) || candidate.Errors.Count != 2 || candidate.Mappings["4"].Installed == null)
+                throw new Exception("Partial configuration loading or Windows name resolution failed.");
+            Console.WriteLine("PASS: actual Windows catalog failure and invalid mapping isolated; valid folder and Chrome mappings still loaded");
+            return;
+        }
         if (args.Length == 2 && args[0] == "--validate-config")
         {
             var candidate = Configuration.Parse(File.ReadAllText(args[1]));
             AppCatalog.Resolve(candidate);
+            if (candidate.Errors.Count > 0) throw new Exception(string.Join("\n", candidate.Errors));
+            Native.EnumWindows((window, _) =>
+            {
+                var name = new System.Text.StringBuilder(256);
+                Native.GetClassName(window, name, name.Capacity);
+                if (name.ToString() is "Progman" or "WorkerW" or "Shell_TrayWnd")
+                    if (WindowActions.MatchesApplication(window, new Mapping { Action = "application", Executable = "explorer.exe", Process = "explorer" }))
+                        throw new Exception("Explorer mapping incorrectly matched the desktop/taskbar.");
+                return true;
+            }, 0);
+            Console.WriteLine("PASS: Explorer application mappings exclude desktop/taskbar windows");
             Console.WriteLine($"PASS: strict configuration validated; {candidate.Mappings.Count} mappings and all Start menu names resolved");
             return;
         }

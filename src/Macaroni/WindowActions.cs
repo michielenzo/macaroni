@@ -167,6 +167,14 @@ internal sealed class WindowActions : IDisposable
     {
         try
         {
+            // explorer.exe also owns the desktop and taskbar. Application
+            // mappings must only adopt actual File Explorer folder windows.
+            if (System.IO.Path.GetFileNameWithoutExtension(name).Equals("explorer", StringComparison.OrdinalIgnoreCase))
+            {
+                var className = new StringBuilder(256);
+                Native.GetClassName(window, className, className.Capacity);
+                if (className.ToString() is not ("CabinetWClass" or "ExploreWClass")) return false;
+            }
             Native.GetWindowThreadProcessId(window, out var pid);
             using var process = Process.GetProcessById((int)pid);
             return string.Equals(process.ProcessName, System.IO.Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase);

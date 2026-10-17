@@ -72,19 +72,15 @@ internal static class AppCatalog
     }
     private static void Release(object? value) { if (value != null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value); }
 
-    internal static void Resolve(Configuration config) => Resolve(config, Read());
+    internal static void Resolve(Configuration config) => AppNames.ResolveMappings(config, Read());
     internal static async Task ResolveAsync(Configuration config)
     {
         if (!config.Mappings.Values.Any(m => !string.IsNullOrWhiteSpace(m.StartMenuName))) return;
-        Resolve(config, await ReadAsync());
-    }
-    private static void Resolve(Configuration config, InstalledApp[] catalog)
-    {
-        foreach (var mapping in config.Mappings.Values.Where(m => !string.IsNullOrWhiteSpace(m.StartMenuName)))
+        try { AppNames.ResolveMappings(config, await ReadAsync()); }
+        catch (Exception ex)
         {
-            mapping.Installed = AppNames.Resolve(mapping.StartMenuName, catalog);
-            if (mapping.Installed.StrictIdentity && string.IsNullOrWhiteSpace(mapping.Installed.AppId))
-                throw new Exception($"‘{mapping.StartMenuName}’ has no usable app identity. Reinstall its Start menu shortcut or use an explicit mapping.");
+            foreach (var key in config.Mappings.Where(p => !string.IsNullOrWhiteSpace(p.Value.StartMenuName)).Select(p => p.Key).ToArray())
+                config.Skip(key, "Could not read Start menu applications: " + ex.Message);
         }
     }
 }

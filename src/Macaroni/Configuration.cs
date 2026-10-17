@@ -8,6 +8,42 @@ public sealed class Configuration
     public TerminalSettings Terminal { get; set; } = new();
     public Dictionary<string, Mapping> Mappings { get; set; } = new();
     public Dictionary<string, string> Monitors { get; set; } = new();
+    internal List<string> Errors { get; } = new();
+    internal void Skip(string key, string reason)
+    {
+        Mappings.Remove(key);
+        Errors.Add($"Key {key} disabled: {reason}");
+    }
+    public static Configuration Load(string json)
+    {
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        if (document.RootElement.ValueKind != JsonValueKind.Object) throw new Exception("Configuration must be an object.");
+        var root = document.RootElement.EnumerateObject().ToArray();
+        var duplicates = root.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+        if (duplicates != null) throw new Exception($"Duplicate top-level property ‘{duplicates.Key}’.");
+        // Validate shared settings separately so malformed mapping values cannot
+        // prevent independent keys from loading. Never choose the last duplicate.
+        string shared = "{" + string.Join(",", root.Where(p => !p.Name.Equals("mappings", StringComparison.OrdinalIgnoreCase)).Select(p => JsonSerializer.Serialize(p.Name) + ":" + p.Value.GetRawText())) + "}";
+        var config = Parse(shared);
+        var mappings = root.FirstOrDefault(p => p.Name.Equals("mappings", StringComparison.OrdinalIgnoreCase));
+        if (mappings.Value.ValueKind == JsonValueKind.Undefined) return config;
+        if (mappings.Value.ValueKind != JsonValueKind.Object) throw new Exception("mappings must be an object.");
+        foreach (var group in mappings.Value.EnumerateObject().GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() != 1) { config.Skip(group.Key, "duplicate key mappings are not allowed."); continue; }
+            var entry = group.Single();
+            try
+            {
+                string single = "{\"mappings\":{" + JsonSerializer.Serialize(entry.Name) + ":" + entry.Value.GetRawText() + "}}";
+                config.Mappings.Add(entry.Name, Parse(single).Mappings[entry.Name]);
+            }
+            catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException || ex.GetType() == typeof(Exception))
+            {
+                config.Skip(entry.Name, ex.Message);
+            }
+        }
+        return config;
+    }
     public static Configuration Parse(string json)
     {
         using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });

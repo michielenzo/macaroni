@@ -13,6 +13,25 @@ void Reject(string name, string json)
     Check(name, false);
 }
 var assignments = new Dictionary<string, string> { ["1"] = "laptop", ["2"] = "external-right", ["3"] = "external-left" };
+var partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder"},"3":{"action":"command","executable":"cmd.exe"}}}""");
+Check("Invalid mapping does not reject valid neighbours", partial.Mappings.Keys.SequenceEqual(["1", "3"]) && partial.Errors.Count == 1 && partial.Errors[0].Contains("Key 2"));
+partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":null,"3":"oops","4":{"action":"folder","path":"D:/","monitor":"wrong"}}}""");
+Check("Null, non-object and malformed field types isolated per key", partial.Mappings.Count == 1 && partial.Mappings.ContainsKey("1") && partial.Errors.Count == 3);
+partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder","path":"D:/"},"2":{"action":"folder","path":"E:/"}}}""");
+Check("Every duplicate of a key disabled without rejecting other keys", partial.Mappings.Count == 1 && !partial.Mappings.ContainsKey("2") && partial.Errors[0].Contains("duplicate"));
+partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/","PATH":"D:/"},"2":{"action":"folder","path":"E:/"}}}""");
+Check("Duplicate mapping fields only disable their key", partial.Mappings.ContainsKey("2") && !partial.Mappings.ContainsKey("1"));
+partial = Configuration.Load("""{"mappings":{"1":{"action":"application","startMenuName":"Missing app"},"2":{"action":"folder","path":"C:/"},"3":{"action":"application","startMenuName":"Google Chrome"}}}""");
+AppNames.ResolveMappings(partial, [new InstalledApp("Google Chrome", "chrome.lnk", "chrome", "Chrome", false, "chrome.exe")]);
+Check("Unresolved Start menu name only disables its key", partial.Mappings.ContainsKey("2") && partial.Mappings.ContainsKey("3") && !partial.Mappings.ContainsKey("1") && partial.Errors[0].Contains("Key 1"));
+partial = Configuration.Load("""{"mappings":{"1":{"action":"folder","path":"C:/"}}}""");
+Check("Fixed mapping is restored on next load", partial.Mappings.ContainsKey("1") && partial.Errors.Count == 0);
+bool unparseable = false;
+try { Configuration.Load("{\"mappings\":"); } catch { unparseable = true; }
+Check("Malformed JSON still rejects the file", unparseable);
+bool duplicateRoot = false;
+try { Configuration.Load("""{"mappings":{},"Mappings":{}}"""); } catch { duplicateRoot = true; }
+Check("Ambiguous top-level settings reject the file", duplicateRoot);
 Check("Omitted terminal object retains Windows Terminal defaults", Configuration.Parse("{}").Terminal.Executable == "wt.exe");
 Check("Structured terminal settings accepted", Configuration.Parse("""{"terminal":{"executable":"other.exe","process":"other","arguments":["--new"]}}""").Terminal.Arguments.SequenceEqual(["--new"]));
 Reject("Null terminal object rejected", """{"terminal":null}""");

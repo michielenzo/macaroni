@@ -34,6 +34,8 @@ internal sealed class TrayApplication : ApplicationContext
     private bool enabled;
     private bool stopping;
     private int configurationRevision;
+    private bool invalidConfigurationFile;
+    private string[] invalidMappingKeys = [];
     internal TrayApplication()
     {
         Directory.CreateDirectory(directory);
@@ -79,11 +81,26 @@ internal sealed class TrayApplication : ApplicationContext
         int revision = ++configurationRevision;
         try
         {
-            var candidate = Configuration.Parse(File.ReadAllText(ConfigPath));
+            var candidate = Configuration.Load(File.ReadAllText(ConfigPath));
             await AppCatalog.ResolveAsync(candidate);
-            if (!stopping && revision == configurationRevision) configuration = candidate;
+            if (!stopping && revision == configurationRevision)
+            {
+                configuration = candidate;
+                invalidConfigurationFile = false;
+                invalidMappingKeys = candidate.Errors.Select(error => error.Split(" disabled:")[0].Replace("Key ", "")).ToArray();
+                UpdateTray();
+                if (candidate.Errors.Count > 0) Report(new Exception($"Loaded {candidate.Mappings.Count} working mappings. " + string.Join(" ", candidate.Errors)));
+            }
         }
-        catch (Exception ex) { if (!stopping && revision == configurationRevision) Report(new Exception("Configuration unchanged: " + ex.Message)); }
+        catch (Exception ex)
+        {
+            if (!stopping && revision == configurationRevision)
+            {
+                invalidConfigurationFile = true;
+                UpdateTray();
+                Report(new Exception("Configuration unchanged: " + ex.Message));
+            }
+        }
     }
     private async void Dispatch(int digit, bool control, nint window)
     {
@@ -158,8 +175,14 @@ internal sealed class TrayApplication : ApplicationContext
     private void UpdateTray()
     {
         toggle.Text = enabled ? "Disable Macaroni" : "Enable Macaroni";
-        tray.Text = enabled ? "Macaroni — enabled" : "Macaroni — disabled";
-        tray.Icon = enabled ? SystemIcons.Application : SystemIcons.Warning;
+        string status = enabled ? "Macaroni — enabled" : "Macaroni — disabled";
+        if (invalidConfigurationFile) status += " | Invalid configuration file";
+        else if (invalidMappingKeys.Length > 0) status += " | Invalid keys: " + string.Join(", ", invalidMappingKeys);
+        // Stay within the tooltip limit on older Windows/NotifyIcon versions.
+        tray.Text = status.Length <= 63 ? status : status[..60] + "…";
+        tray.Icon = invalidConfigurationFile || invalidMappingKeys.Length > 0
+            ? SystemIcons.Error
+            : enabled ? SystemIcons.Application : SystemIcons.Warning;
     }
     private void SetStartup(bool value)
     {

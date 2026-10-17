@@ -30,7 +30,7 @@ Macaroni maps physical numpad keys to applications, folders, or commands. This g
 
 Your active file is `%LOCALAPPDATA%\Macaroni\config.json`. You can paste that path into File Explorer's address bar to open it. The repository's [config.example.json](config.example.json) is the template copied on first launch; editing the template does not change your active configuration.
 
-Saved changes normally apply after about 350 ms without further file changes. No restart is needed. If an edit is invalid, Macaroni keeps the previous working configuration and shows a notification. You can also select **Reload configuration** in the tray.
+Saved changes normally apply after about 350 ms without further file changes. No restart is needed. Invalid mappings are disabled individually; valid mappings still load. A notification and the log identify skipped keys. Invalid JSON or invalid shared settings retain the previous working configuration. You can also select **Reload configuration** in the tray.
 
 ## A complete example
 
@@ -132,7 +132,7 @@ Configuration is validated strictly before any changes apply:
 - `selection`, `launchAlways`, and `process` are application-only settings. `title` is allowed only with `selection: title`. `mode` is command-only.
 - Unknown fields, invalid values, null fields, conflicting launch sources, and duplicate properties are rejected. This includes multiple definitions of the same numpad key, even if their values are identical. Property-name duplicates are checked ignoring capitalization.
 
-One invalid mapping rejects the entire edit, preserving the active configuration. For older files, rename `app` to `startMenuName`, add missing `action` settings, remove unused titles from dedicated mappings, and remove window-placement fields from hidden commands.
+One invalid mapping disables only its key; other valid mappings in the file still load, including at startup. Duplicate definitions disable every entry for that key, rather than choosing one. Fix the entry and save to re-enable it. For older files, rename `app` to `startMenuName`, add missing `action` settings, remove unused titles from dedicated mappings, and remove window-placement fields from hidden commands.
 
 ## Opening and focusing applications
 
@@ -162,7 +162,7 @@ Use `startMenuName` to avoid looking up executable paths and process names:
 
 Right-click the tray and choose **List applications** to open `applications.json`, listing the discovered names and launch metadata. Use a complete `Name` value. Lookup ignores capitalization and surrounding spaces; it does not use substring matching, Windows Search ranking, websites, documents, or arbitrary aliases.
 
-Macaroni reads executable shortcuts in your personal and shared Start menu Programs folders, plus packaged applications in Windows' AppsFolder. Names are resolved when configuration loads. After installing or renaming an app, use **Reload configuration**. An unknown name shows nearby names; distinct entries with the same name are rejected with their launch locations instead of choosing arbitrarily. Resolution errors retain the last active configuration, just like invalid JSON. Use an explicit `executable`/`process` mapping without `startMenuName` to disambiguate.
+Macaroni reads executable shortcuts in your personal and shared Start menu Programs folders, plus packaged applications in Windows' AppsFolder. Names are resolved when configuration loads. After installing or renaming an app, use **Reload configuration**. An unknown name shows nearby names; distinct entries with the same name are rejected with their launch locations instead of choosing arbitrarily. Resolution errors disable only the affected key; other valid mappings still load. Use an explicit `executable`/`process` mapping without `startMenuName` to disambiguate.
 
 ### Chrome installed web apps
 
@@ -532,9 +532,10 @@ Prefer absolute folder and working-directory paths. Relative paths depend on Mac
 
 ## Reloading and saved state
 
-- The entire file is validated before it replaces the active settings. One invalid mapping prevents all changes in that save from taking effect.
+- Mapping validation is isolated per key. Valid mappings replace the active settings; invalid mappings are skipped and their keys behave normally. The notification reports how many mappings loaded, and the log lists each skipped key and reason.
+- Configuration errors give the tray icon a red error symbol. Its tooltip shows enabled/disabled state plus the invalid keys (including duplicates), or “Invalid configuration file” if the file could not load. The error indicator remains when toggling Macaroni and clears after a reload with no configuration errors. Long key lists are shortened in the tooltip; the log contains full details.
 - An in-progress action keeps the settings it started with. Later presses use the new configuration.
-- Invalid configuration at startup leaves no action mappings active until corrected. The previous valid configuration is retained only in memory during a running session, not as a persisted fallback.
+- The same per-key behavior applies at startup, including unknown or ambiguous Start menu names. Malformed JSON, invalid shared settings (`terminal`, `monitors`, version), or duplicate top-level properties prevent the file from loading: retain the previous configuration if running, or start with no action mappings if none has loaded yet. The previous valid configuration is retained only in memory, not as a persisted fallback.
 - Disabling Macaroni pauses shortcuts but does not stop configuration reloads. Key 0 and the tray can re-enable it.
 - Enabled/disabled state is stored separately in `%LOCALAPPDATA%\Macaroni\enabled.txt` and remembered across restarts. There is no JSON keyword for it.
 - Toggling with numpad 0 shows a notification stating whether Macaroni is enabled or disabled.
