@@ -3,13 +3,17 @@ namespace Macaroni;
 internal sealed class WorkspaceRunner
 {
     private readonly HashSet<string> running = new();
-    internal bool IsRunning(string key) => running.Contains(key);
+    private readonly Dictionary<string, object> generations = new();
+    internal bool IsRunning(string key) => generations.ContainsKey(key);
+    internal bool IsExecuting(string key) => running.Contains(key);
     internal static string ActionId(string key, Mapping action) => $"{key}/{action.Position}";
 
-    internal async Task<List<string>> Run(string key, KeyBinding binding, Func<string, Mapping, IReadOnlySet<nint>, Task<nint>> execute, Func<nint, Task> focus, IReadOnlyDictionary<string, nint>? reservations = null, Func<nint, bool>? focusWasLost = null, Action<IReadOnlyList<nint>, nint>? present = null)
+    internal async Task<List<string>> Run(string key, KeyBinding binding, Func<string, Mapping, IReadOnlySet<nint>, Task<nint>> execute, Func<nint, Task> focus, IReadOnlyDictionary<string, nint>? reservations = null, Func<nint, bool>? focusWasLost = null, Action<IReadOnlyList<nint>, nint>? present = null, Func<Task>? settle = null)
     {
         var errors = new List<string>();
         if (!running.Add(key)) return errors;
+        var generation = new object();
+        generations[key] = generation;
         try
         {
             var claims = reservations == null ? new Dictionary<string, nint>() : new Dictionary<string, nint>(reservations);
@@ -27,6 +31,16 @@ internal sealed class WorkspaceRunner
                 tasks.Add(task);
             }
             await Task.WhenAll(tasks);
+            // Window discovery must not overlap for this key, but passive startup
+            // tracking must not swallow a new press after the user closes an app.
+            running.Remove(key);
+            if (settle != null)
+            {
+                try { await settle(); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { errors.Add($"Key {key}: startup placement failed: {ex.Message}"); }
+            }
+            if (!ReferenceEquals(generations.GetValueOrDefault(key), generation)) return errors;
             // Other programs may activate themselves while launching. Reassert
             // only if focus changed, so an already focused window is untouched.
             if (focusedWindow != 0 && focusWasLost?.Invoke(focusedWindow) == true) await Focus(focusedWindow);
@@ -61,7 +75,14 @@ internal sealed class WorkspaceRunner
                 catch (Exception ex) { lock (errors) errors.Add($"Key {key}, {labels[i]}: {ex.Message}"); }
             }
         }
-        finally { running.Remove(key); }
+        finally
+        {
+            if (ReferenceEquals(generations.GetValueOrDefault(key), generation))
+            {
+                running.Remove(key);
+                generations.Remove(key);
+            }
+        }
         return errors;
     }
 }

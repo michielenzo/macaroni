@@ -39,6 +39,14 @@ bool duplicateRoot = false;
 try { LoadFixture("""{"mappings":{},"Mappings":{}}"""); } catch { duplicateRoot = true; }
 Check("Ambiguous top-level settings reject the file", duplicateRoot);
 Check("Omitted terminal object retains Windows Terminal defaults", ParseFixture("{}").Terminal.Executable == "wt.exe");
+Check("Startup tracking defaults to eight seconds",Configuration.Parse("{}").StartupTrackingSeconds==8);
+Check("Startup tracking duration is configurable",Configuration.Parse("""{"startupTrackingSeconds":15}""").StartupTrackingSeconds==15);
+Check("Startup tracking can be disabled",Configuration.Parse("""{"startupTrackingSeconds":0}""").StartupTrackingSeconds==0);
+Reject("Negative startup tracking rejected","""{"startupTrackingSeconds":-1}""");
+Reject("Excessive startup tracking rejected","""{"startupTrackingSeconds":301}""");
+Reject("Fractional startup tracking rejected","""{"startupTrackingSeconds":1.5}""");
+Reject("String startup tracking rejected","""{"startupTrackingSeconds":"15"}""");
+Reject("Null startup tracking rejected","""{"startupTrackingSeconds":null}""");
 Check("Structured terminal settings accepted", ParseFixture("""{"terminal":{"executable":"other.exe","process":"other","arguments":["--new"]}}""").Terminal.Arguments.SequenceEqual(["--new"]));
 Reject("Null terminal object rejected", """{"terminal":null}""");
 Reject("Old string terminal rejected", """{"terminal":"wt.exe"}""");
@@ -269,6 +277,25 @@ await runner.Run("6",presentationBinding,(id,a,used)=>Task.FromResult((nint)(700
     presentationOrder.Add("present");
 });
 Check("Workspace stacking completes after designated focus",presentationOrder.SequenceEqual(["focus","present"]));
+var startupDone = new TaskCompletionSource();
+bool startupFocused=false, startupPresented=false;
+var startupRun=runner.Run("7",recoverBinding,(id,a,used)=>Task.FromResult((nint)900),w=>{startupFocused=true;return Task.CompletedTask;},present:(windows,focus)=>startupPresented=true,settle:()=>startupDone.Task);
+Check("Focus is immediate while startup stabilization continues",startupFocused && !startupRun.IsCompleted && !startupPresented);
+startupDone.SetResult();await startupRun;
+Check("Workspace final stacking waits for startup stabilization",startupPresented && !runner.IsRunning("7"));
+var oldTracking=new TaskCompletionSource();
+var reopenedWindow=new TaskCompletionSource<nint>();
+int reopenExecutions=0, oldFocusCalls=0, oldPresentCalls=0;
+var oldRun=runner.Run("8",recoverBinding,(id,a,used)=>Task.FromResult((nint)901),w=>{oldFocusCalls++;return Task.CompletedTask;},focusWasLost:w=>true,present:(windows,focus)=>oldPresentCalls++,settle:()=>oldTracking.Task);
+Check("Startup tracking does not keep key execution locked",runner.IsRunning("8") && !runner.IsExecuting("8"));
+var reopening=runner.Run("8",recoverBinding,(id,a,used)=>{reopenExecutions++;return reopenedWindow.Task;},w=>Task.CompletedTask);
+Check("Repeat press during tracking can reopen a closed app",reopenExecutions==1 && runner.IsExecuting("8"));
+oldTracking.SetResult();await oldRun;
+Check("Old tracking cannot steal focus or present stale windows",oldFocusCalls==1 && oldPresentCalls==0);
+Check("Old run cleanup cannot unlock newer window discovery",runner.IsExecuting("8"));
+reopenedWindow.SetResult(902);await reopening;
+Check("Reopened action releases its own execution state",!runner.IsRunning("8") && !runner.IsExecuting("8"));
+Check("Process names containing dots retain their full identity",ActionLabels.ProcessName("my.company.app")=="MY.COMPANY.APP" && ActionLabels.ProcessName("my.company.app.exe")=="MY.COMPANY.APP");
 Console.WriteLine($"{passed} checks passed.");
 
 string Fixture(string json) { try { return ConfigurationMigration.Upgrade(json); } catch { return json; } }

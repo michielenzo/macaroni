@@ -5,6 +5,7 @@ namespace Macaroni;
 public sealed class Configuration
 {
     public int Version { get; set; } = 1;
+    public int StartupTrackingSeconds { get; set; } = 8;
     public TerminalSettings Terminal { get; set; } = new();
     public Dictionary<string, KeyBinding> Mappings { get; set; } = new();
     public Dictionary<string, string> Monitors { get; set; } = new();
@@ -36,6 +37,8 @@ public sealed class Configuration
         using var sharedDocument = JsonDocument.Parse(shared);
         RejectDuplicates(sharedDocument.RootElement, "configuration");
         var config = JsonSerializer.Deserialize<Configuration>(shared, JsonOptions) ?? throw new Exception("Empty configuration.");
+        if (config.StartupTrackingSeconds is < 0 or > 300)
+            throw new Exception("startupTrackingSeconds must be an integer from 0 to 300; 0 disables startup tracking.");
         if (config.Version != 1 || config.Terminal is null || string.IsNullOrWhiteSpace(config.Terminal.Executable) || string.IsNullOrWhiteSpace(config.Terminal.Process) || config.Terminal.Arguments is null || config.Terminal.Arguments.Any(a => a is null) || config.Monitors is null)
             throw new Exception("Invalid configuration version, terminal, or monitors.");
         foreach (var (number, identity) in config.Monitors)

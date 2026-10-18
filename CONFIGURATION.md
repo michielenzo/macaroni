@@ -119,6 +119,7 @@ These belong outside `mappings`, next to it in the outermost object.
 | Keyword | Type | Default if omitted | Purpose |
 | --- | --- | --- | --- |
 | `version` | Integer | `1` | Configuration format version. Only `1` is supported. |
+| `startupTrackingSeconds` | Integer, `0`–`300` | `8` | Seconds to track newly launched windows for delayed startup layout changes. Applies to all keys. Set `0` to disable tracking, or increase it for slow-starting apps. Does not change the 15-second timeout for finding a window. |
 | `mappings` | Object | `{}` | Numbered entries defining your shortcuts. |
 | `monitors` | Object | `{}` | Optional physical-monitor overrides. Leave empty or omit to follow Windows Settings numbering automatically. |
 | `terminal` | Object | Windows Terminal settings | Shared terminal window settings for commands with `"mode": "terminal"`. See [Choosing a terminal](#choosing-a-terminal) for its nested fields. |
@@ -196,7 +197,7 @@ For actions that depend on each other, set `"execution": "sequential"` next to `
 
 Multiple application actions using `selection: recent` for the same application on one key are all disabled with diagnostics; valid siblings still run. Otherwise, focusing one changes the recent-window order and can swap layouts on the next press. Use `selection: dedicated` for stable separate windows. Start menu aliases are checked again after resolution, and distinct installed Chrome apps remain distinct applications. The restriction applies within each key only.
 
-A failed launch or placement is reported and later actions still run. If the designated focus action fails, no other action is focused automatically. A second press while the same key is still running is ignored. Distinct actions reuse distinct windows within the workspace; two actions for the same application may need new-window launch arguments so both layouts can be satisfied. Dedicated assignments are tracked per action, not just per key, and later actions' assigned windows are reserved so earlier actions cannot adopt them.
+A failed launch or placement is reported and later actions still run. If the designated focus action fails, no other action is focused automatically. A second press while the same key is still discovering and initially placing windows is ignored. Once those actions finish, another press is accepted even if startup tracking continues; the newer run supersedes final focus and stacking from the older run. Distinct actions reuse distinct windows within the workspace; two actions for the same application may need new-window launch arguments so both layouts can be satisfied. Dedicated assignments are tracked per action, not just per key, and later actions' assigned windows are reserved so earlier actions cannot adopt them.
 
 ### Assignment palette and labels
 
@@ -217,6 +218,10 @@ Wrap each existing numbered entry in `"actions": [ ... ]`. To preserve its previ
 ## Opening and focusing applications
 
 An application action first looks for a suitable window. If it finds one, it places that window. Otherwise it launches the application and waits up to 15 seconds for a matching window. Only the action with `focus: true` requests focus, as soon as its window is ready.
+
+Newly launched windows are observed after initial placement for the top-level `startupTrackingSeconds` duration (default `8`). For slower apps, put `"startupTrackingSeconds": 15` next to `"version"`, outside `mappings`. Some applications restore their saved size or maximize several seconds after their first window appears; Macaroni reapplies the layout if that happens. Observation runs asynchronously, so other actions and immediate focus continue normally. Normal shortcut presses remain available during observation, so closing an app and pressing the key again can reopen it immediately. Dedicated-window reassignment waits until the run finishes. Existing windows skip this extra observation. Manual move/resize, minimization, closing the window, or another shortcut placing it stops correction for that window. Changes to the setting apply to subsequent launches after configuration reload.
+
+This handles delayed geometry changes on the same window, rather than relying on application-specific delays. Applications that replace a splash window with another window, change geometry after the observation period, enforce minimum dimensions, or require elevated permissions can still need separate handling. The guard records the dimensions the app actually accepts so it does not repeatedly resize an unchanged window that cannot fit the requested layout.
 
 ## Find applications by Start menu name
 

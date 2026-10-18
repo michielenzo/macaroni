@@ -4,10 +4,140 @@ using Macaroni;
 internal static class Program
 {
     [DllImport("user32.dll")] private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+    [DllImport("user32.dll")] private static extern void NotifyWinEvent(uint ev, nint window, int obj, int child);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, uint attribute, out uint value, int size);
     [STAThread]
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Contains("--whatsapp-reopen"))
+        {
+            using var host = new Form { Text="Macaroni WhatsApp reopen test" };
+            host.Shown += async (_, _) =>
+            {
+                try
+                {
+                    var config=Configuration.Parse("""{"startupTrackingSeconds":0,"mappings":{"1":{"actions":[{"action":"application","startMenuName":"WhatsApp","selection":"dedicated","layout":"top-right"}]}}}""");
+                    AppCatalog.Resolve(config);
+                    var mapping=config.Mappings["1"].Actions[0];
+                    nint main=0;
+                    Native.EnumWindows((w,_)=>{if(Native.IsWindowVisible(w) && (Native.GetWindowLong(w,-20)&0x80)==0 && WindowActions.MatchesApplication(w,mapping))main=w;return true;},0);
+                    if(main==0) throw new Exception("Open WhatsApp before this reopen test.");
+                    using var actions=new WindowActions();
+                    actions.AssignDedicated("1/0",mapping,main);
+                    PostMessage(main,0x10,0,0);
+                    for(int i=0;i<25 && Native.IsWindowVisible(main);i++) await Task.Delay(200);
+                    if(Native.IsWindowVisible(main)) throw new Exception("WhatsApp did not close; not forcing it.");
+                    nint reopened=await actions.ExecuteAction("1/0",mapping,config,new HashSet<nint>());
+                    if((Native.GetWindowLong(reopened,-20)&0x80)!=0) throw new Exception("Macaroni selected WhatsApp's helper window instead of reopening the main window.");
+                    if(!Native.IsWindowVisible(reopened)) throw new Exception("WhatsApp's main window did not reopen.");
+                    Console.WriteLine("PASS: closed WhatsApp main window reopens despite retained background windows");
+                }
+                catch(Exception ex){Console.Error.WriteLine(ex);Environment.ExitCode=1;}
+                finally{host.Close();}
+            };
+            Application.Run(host);return;
+        }
+        if (args.Length == 2 && args[0] == "--inspect-app")
+        {
+            var app = AppNames.Resolve(args[1], AppCatalog.Read());
+            Console.WriteLine($"App: {app.Name}, process={app.Process}, identity={app.AppId}, strict={app.StrictIdentity}");
+            var mapping = new Mapping { Action="application", StartMenuName=app.Name, Installed=app };
+            Native.EnumWindows((w, _) =>
+            {
+                if (WindowActions.MatchesApplication(w,mapping))
+                {
+                    DwmGetWindowAttribute(w,14,out uint cloaked,sizeof(uint));
+                    var title = new System.Text.StringBuilder(512); Native.GetWindowText(w,title,title.Capacity);
+                    var name = new System.Text.StringBuilder(256); Native.GetClassName(w,name,name.Capacity);
+                    Native.GetWindowRect(w,out var rect);
+                    Console.WriteLine($"{WindowActions.WindowState(w)}, cloaked={cloaked}, title={title}, class={name}, exStyle=0x{Native.GetWindowLong(w,-20):X}, size={rect.Right-rect.Left}x{rect.Bottom-rect.Top}");
+                }
+                return true;
+            },0);
+            return;
+        }
+        if (args.Contains("--startup-layout-test"))
+        {
+            using var test = new Form { Text = "Macaroni startup correction test" };
+            test.Shown += async (_, _) =>
+            {
+                try
+                {
+                    using var actions = new WindowActions();
+                    var config = new Configuration();
+                    var screen = Screen.FromHandle(test.Handle);
+                    var mapping = new Mapping { Layout="bottom-left", Monitor=MonitorCatalog.WindowsDisplays().First(d=>d.Screen.DeviceName==screen.DeviceName).Number };
+                    WindowPlacement.Apply(test.Handle, mapping.Layout, screen, activate:false);
+                    config.StartupTrackingSeconds=0;
+                    if (!actions.StabilizeStartup(test.Handle,mapping,config,CancellationToken.None).IsCompletedSuccessfully) throw new Exception("Disabled startup tracking still waits.");
+                    config.StartupTrackingSeconds=1;
+                    var duration = System.Diagnostics.Stopwatch.StartNew();
+                    await actions.StabilizeStartup(test.Handle,mapping,config,CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3));
+                    if(duration.ElapsedMilliseconds<900) throw new Exception("Startup tracking ended before configured duration.");
+                    Console.WriteLine("PASS: configured startup duration and zero-disable respected");
+                    config.StartupTrackingSeconds=8;
+                    var watching = actions.StabilizeStartup(test.Handle, mapping, config, CancellationToken.None);
+                    await Task.Delay(350); Native.ShowWindow(test.Handle, 3);
+                    await Task.Delay(450);
+                    if (Native.IsZoomed(test.Handle) || !Layouts.Matches(WindowPlacement.VisibleBounds(test.Handle), Layouts.Bounds(mapping.Layout, screen.WorkingArea, Size.Empty))) throw new Exception("Delayed maximize was not corrected.");
+                    Console.WriteLine("PASS: delayed startup maximization corrected");
+                    NotifyWinEvent(0xA, test.Handle, 0, 0);
+                    await Task.Delay(100);
+                    var manualBounds = new Rectangle(screen.WorkingArea.Left+50,screen.WorkingArea.Top+50,600,400);
+                    test.Bounds=manualBounds;
+                    await watching.WaitAsync(TimeSpan.FromSeconds(2));
+                    await Task.Delay(300);
+                    if(test.Bounds!=manualBounds) throw new Exception("Startup guard fought manual movement.");
+                    Console.WriteLine("PASS: manual move cancels startup correction");
+                    var newer = new Mapping { Action="application", Executable=Environment.ProcessPath!, Process=System.Diagnostics.Process.GetCurrentProcess().ProcessName + ".exe", Selection="title", Title=test.Text, Layout="top-right", Monitor=mapping.Monitor };
+                    var superseded = actions.StabilizeStartup(test.Handle, mapping, config, CancellationToken.None);
+                    await actions.ExecuteAction("newer-shortcut",newer,config,new HashSet<nint>());
+                    await superseded.WaitAsync(TimeSpan.FromSeconds(2));
+                    if(!Layouts.Matches(WindowPlacement.VisibleBounds(test.Handle),Layouts.Bounds(newer.Layout,screen.WorkingArea,Size.Empty))) throw new Exception("Startup correction overrode a newer shortcut.");
+                    Console.WriteLine("PASS: newer shortcut supersedes startup correction");
+                    var minimized = actions.StabilizeStartup(test.Handle, mapping, config, CancellationToken.None);
+                    Native.ShowWindow(test.Handle,6);
+                    await minimized.WaitAsync(TimeSpan.FromSeconds(2));
+                    if(!Native.IsIconic(test.Handle)) throw new Exception("Startup correction undid minimization.");
+                    Console.WriteLine("PASS: minimizing stops startup correction");
+                }
+                catch(Exception ex) { Console.Error.WriteLine(ex);Environment.ExitCode=1; }
+                finally { test.Close(); }
+            };
+            Application.Run(test); return;
+        }
+        if (args.Contains("--postman-startup"))
+        {
+            if (System.Diagnostics.Process.GetProcessesByName("Postman").Length > 0) throw new Exception("Close Postman before running this cold-start test.");
+            using var host = new Form { Text = "Macaroni startup placement test" };
+            host.Shown += async (_, _) =>
+            {
+                try
+                {
+                    var config = Configuration.Parse("""{"mappings":{"1":{"actions":[{"action":"application","startMenuName":"Postman","selection":"dedicated","layout":"bottom-left"}]}}}""");
+                    AppCatalog.Resolve(config);
+                    var mapping = config.Mappings["1"].Actions[0];
+                    using var actions = new WindowActions { Diagnostics = Console.WriteLine };
+                    var elapsed = System.Diagnostics.Stopwatch.StartNew();
+                    nint target = await actions.ExecuteAction("1/0", mapping, config, new HashSet<nint>());
+                    Console.WriteLine($"Placed after {elapsed.ElapsedMilliseconds}ms, target=0x{target:X}");
+                    await actions.WaitForStartup(["1/0"]);
+                    Console.WriteLine($"Startup observation completed after {elapsed.ElapsedMilliseconds}ms");
+                    for (int i = 0; i < 32; i++)
+                    {
+                        await Task.Delay(250);
+                        Console.WriteLine($"{elapsed.ElapsedMilliseconds}ms: {WindowActions.WindowState(target)}, bounds={WindowPlacement.VisibleBounds(target)}");
+                    }
+                    var expected = Layouts.Bounds(mapping.Layout, MonitorCatalog.Resolve(mapping.Monitor, config).WorkingArea, Size.Empty);
+                    if (Native.IsZoomed(target) || !Layouts.Matches(WindowPlacement.VisibleBounds(target), expected)) throw new Exception("Postman overwrote its startup layout.");
+                    Console.WriteLine("PASS: Postman cold start retains its requested layout");
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { host.Close(); }
+            };
+            Application.Run(host); return;
+        }
         if (args.Contains("--explorer-restore"))
         {
             using var source = new Form { Text = "Macaroni Explorer restore test" };
@@ -137,6 +267,11 @@ internal static class Program
                         new Mapping {Action="application",Executable=Environment.ProcessPath!,Process=processName,Selection="dedicated",Layout="right",Monitor=monitor,Position=1}]};
                     var config = new Configuration();
                     using var actualActions = new WindowActions();
+                    using var helper = new Form { Text="Visible titled helper", FormBorderStyle=FormBorderStyle.FixedToolWindow, ShowInTaskbar=false };
+                    helper.Show();
+                    if(actualActions.DedicatedChoices("helper-check",dedicatedBinding.Actions[0]).Any(c=>c.Window.Handle==helper.Handle)) throw new Exception("A tool window was accepted as an application window.");
+                    Console.WriteLine("PASS: visible titled helper windows excluded from application selection");
+                    helper.Close();
                     var reservations = new Dictionary<string,nint> {["source"]=source.Handle};
                     var windows = new List<nint>();
                     var dedicatedErrors = await runner.Run("2",dedicatedBinding, async (id,action,used)=>

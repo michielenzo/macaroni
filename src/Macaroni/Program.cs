@@ -118,10 +118,10 @@ internal sealed class TrayApplication : ApplicationContext
             string key = digit.ToString();
             if (!enabled || !snapshot.Mappings.TryGetValue(key, out var binding)) return;
             if (control) { AssignFocused(key, binding, window); return; }
-            if (workspaces.IsRunning(key)) return;
+            if (workspaces.IsExecuting(key)) return;
             var reservations = actions.Reservations(key, binding);
             actions.Diagnostics?.Invoke($"Key {key}: {binding.Actions.Count} actions; reserved=" + string.Join(",", reservations.Select(p => $"{p.Key}=0x{p.Value:X}")));
-            var failures = await workspaces.Run(key, binding, (id, action, used) => actions.ExecuteAction(id, action, snapshot, used), actions.Focus, reservations, w => Native.GetForegroundWindow() != w, WindowPlacement.RaiseWorkspace);
+            var failures = await workspaces.Run(key, binding, (id, action, used) => actions.ExecuteAction(id, action, snapshot, used), actions.Focus, reservations, w => Native.GetForegroundWindow() != w, WindowPlacement.RaiseWorkspace, () => actions.WaitForStartup(binding.Actions.Select(a => WorkspaceRunner.ActionId(key, a))));
             if (actions.Diagnostics != null)
                 foreach (var pair in actions.Reservations(key, binding)) actions.Diagnostics($"Key {key} completed, {pair.Key}: {WindowActions.WindowState(pair.Value)}");
             if (failures.Count > 0 && !stopping) Report(new Exception(string.Join("\n", failures)));

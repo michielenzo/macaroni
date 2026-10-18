@@ -14,11 +14,21 @@ internal sealed class WindowActions : IDisposable
     private readonly HashSet<string> busy = new();
     private readonly Native.EventProc foregroundCallback;
     private readonly nint foregroundHook;
+    private readonly Native.EventProc moveCallback;
+    private readonly nint moveHook;
+    private readonly HashSet<nint> manuallyMoved = new();
+    private readonly Dictionary<nint, long> startupVersions = new();
+    private long startupVersion;
+    private readonly Dictionary<string, Task> startupPlacements = new();
     private readonly CancellationTokenSource lifetime = new();
     internal WindowActions()
     {
         foregroundCallback = (_, _, window, _, _, _, _) => recent[window] = Environment.TickCount64;
         foregroundHook = Native.SetWinEventHook(3, 3, 0, foregroundCallback, 0, 0, 0);
+        // EVENT_SYSTEM_MOVESIZESTART: stop correcting startup geometry once
+        // the user deliberately begins moving/resizing that window.
+        moveCallback = (_, _, window, _, _, _, _) => { if (startupVersions.ContainsKey(window)) manuallyMoved.Add(window); };
+        moveHook = Native.SetWinEventHook(0xA, 0xA, 0, moveCallback, 0, 0, 0);
         recent[Native.GetForegroundWindow()] = Environment.TickCount64;
     }
     private static string Expand(string value) => Environment.ExpandEnvironmentVariables(value);
@@ -51,6 +61,7 @@ internal sealed class WindowActions : IDisposable
     {
         var window = await ExecuteAction(key, mapping, config, new HashSet<nint>());
         if (mapping.Focus && window != 0) await Focus(window);
+        await WaitForStartup([key]);
     }
     internal Task Focus(nint window) => ForegroundActivation.Focus(window, lifetime.Token);
     internal async Task<nint> ExecuteAction(string key, Mapping mapping, Configuration config, IReadOnlySet<nint> excluded)
@@ -58,6 +69,7 @@ internal sealed class WindowActions : IDisposable
         if (!busy.Add(key)) return 0;
         try
         {
+            bool launchedWindow = false;
             if (mapping.Action == "command")
             {
                 var command = StartInfo(mapping.Executable, mapping.Arguments, mapping.WorkingDirectory);
@@ -74,6 +86,7 @@ internal sealed class WindowActions : IDisposable
                     using var process = Process.Start(terminal);
                     var window = await WaitFor(() => WindowClaims.Claim(AllWindows().FirstOrDefault(w => !before.Contains(w) && !excluded.Contains(w) && IsProcess(w, config.Terminal.Process)), excluded));
                     Place(window, mapping, config);
+                    WatchStartup(key, window, mapping, config);
                     return window;
                 }
                 return 0;
@@ -86,6 +99,7 @@ internal sealed class WindowActions : IDisposable
                 target = WindowClaims.Claim(FolderWindows(path).FirstOrDefault(w => !excluded.Contains(w)), excluded);
                 if (target == 0)
                 {
+                    launchedWindow = true;
                     Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true })?.Dispose();
                     target = await WaitFor(() => WindowClaims.Claim(FolderWindows(path).FirstOrDefault(w => !excluded.Contains(w)), excluded));
                 }
@@ -96,6 +110,7 @@ internal sealed class WindowActions : IDisposable
                 target = Find(mapping, identity, excluded);
                 if (target == 0 || mapping.LaunchAlways)
                 {
+                    launchedWindow = target == 0;
                     using var process = StartApplication(mapping);
                     // Single-instance editors forward file arguments to their
                     // existing window and then exit. Give that launcher time
@@ -113,9 +128,67 @@ internal sealed class WindowActions : IDisposable
             Diagnostics?.Invoke($"Action {key}, layout={mapping.Layout}, before placement: {WindowState(target)}");
             Place(target, mapping, config);
             Diagnostics?.Invoke($"Action {key}, after placement: {WindowState(target)}, bounds={WindowPlacement.VisibleBounds(target)}");
+            if (launchedWindow) WatchStartup(key, target, mapping, config);
             return target;
         }
         finally { busy.Remove(key); }
+    }
+    internal async Task WaitForStartup(IEnumerable<string> actionIds)
+    {
+        var pending = actionIds.Where(startupPlacements.ContainsKey).Select(id => (Id: id, Task: startupPlacements[id])).ToArray();
+        try { await Task.WhenAll(pending.Select(p => p.Task)); }
+        finally
+        {
+            foreach (var item in pending)
+                if (startupPlacements.GetValueOrDefault(item.Id) == item.Task) startupPlacements.Remove(item.Id);
+        }
+    }
+    private void WatchStartup(string id, nint window, Mapping mapping, Configuration config)
+    {
+        manuallyMoved.Remove(window);
+        startupPlacements[id] = StabilizeStartup(window, mapping, config, lifetime.Token);
+    }
+    internal async Task StabilizeStartup(nint window, Mapping mapping, Configuration config, CancellationToken cancellation)
+    {
+        long version = ++startupVersion;
+        startupVersions[window] = version;
+        manuallyMoved.Remove(window);
+        try
+        {
+            var bounds = WindowPlacement.VisibleBounds(window);
+            bool maximized = Native.IsZoomed(window);
+            Native.GetWindowThreadProcessId(window, out uint owner);
+            // Some applications restore saved geometry seconds after showing their
+            // first window. Observe a fixed, bounded startup period, not just an early
+            // quiet interval. Existing windows never incur this startup observation.
+            var elapsed = Stopwatch.StartNew();
+            var duration = TimeSpan.FromSeconds(config.StartupTrackingSeconds);
+            while (elapsed.Elapsed < duration)
+            {
+                var remaining = duration - elapsed.Elapsed;
+                if (remaining <= TimeSpan.Zero) break;
+                await Task.Delay(remaining < TimeSpan.FromMilliseconds(200) ? remaining : TimeSpan.FromMilliseconds(200), cancellation);
+                Native.GetWindowThreadProcessId(window, out uint currentOwner);
+                if (startupVersions.GetValueOrDefault(window) != version || !Native.IsWindow(window) || !Native.IsWindowVisible(window) || currentOwner != owner || manuallyMoved.Contains(window) || Native.IsIconic(window)) return;
+                var current = WindowPlacement.VisibleBounds(window);
+                bool zoomed = Native.IsZoomed(window);
+                if (zoomed == maximized && Layouts.Matches(current, bounds)) continue;
+                Diagnostics?.Invoke($"Startup layout changed: {WindowState(window)}, bounds={current}; reapplying {mapping.Layout}.");
+                Place(window, mapping, config, startupCorrection: true);
+                // Remember the achieved bounds rather than retrying endlessly when
+                // an application's minimum dimensions prevent an exact fit.
+                bounds = WindowPlacement.VisibleBounds(window);
+                maximized = Native.IsZoomed(window);
+            }
+            }
+        finally
+        {
+            if (startupVersions.GetValueOrDefault(window) is var current && (current == version || current == 0))
+            {
+                startupVersions.Remove(window);
+                manuallyMoved.Remove(window);
+            }
+        }
     }
     private static ProcessStartInfo StartInfo(string executable, IEnumerable<string> args, string directory)
     {
@@ -189,7 +262,7 @@ internal sealed class WindowActions : IDisposable
         {
             // explorer.exe also owns the desktop and taskbar. Application
             // mappings must only adopt actual File Explorer folder windows.
-            if (System.IO.Path.GetFileNameWithoutExtension(name).Equals("explorer", StringComparison.OrdinalIgnoreCase))
+            if (ActionLabels.ProcessName(name).Equals("explorer", StringComparison.OrdinalIgnoreCase))
             {
                 var className = new StringBuilder(256);
                 Native.GetClassName(window, className, className.Capacity);
@@ -197,14 +270,17 @@ internal sealed class WindowActions : IDisposable
             }
             Native.GetWindowThreadProcessId(window, out var pid);
             using var process = Process.GetProcessById((int)pid);
-            return string.Equals(process.ProcessName, System.IO.Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase);
+            return string.Equals(process.ProcessName, ActionLabels.ProcessName(name), StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
     private static List<nint> AllWindows()
     {
         var windows = new List<nint>();
-        Native.EnumWindows((w, _) => { if (Native.IsWindowVisible(w) && Title(w).Length > 0) windows.Add(w); return true; }, 0);
+        // Packaged/WebView applications can expose visible, titled tool windows
+        // with the same app identity as their main window. Never adopt these
+        // implementation windows as an application's dedicated window.
+        Native.EnumWindows((w, _) => { if (Native.IsWindowVisible(w) && (Native.GetWindowLong(w, -20) & 0x80) == 0 && Title(w).Length > 0) windows.Add(w); return true; }, 0);
         return windows;
     }
     private static string Title(nint window)
@@ -254,8 +330,10 @@ internal sealed class WindowActions : IDisposable
         }
         throw new Exception("No matching window appeared within 15 seconds. Check process, title, and launch arguments; dedicated actions require a new window.");
     }
-    private static void Place(nint window, Mapping mapping, Configuration config)
+    private void Place(nint window, Mapping mapping, Configuration config, bool startupCorrection = false)
     {
+        // A newer shortcut targeting this window supersedes startup correction.
+        if (!startupCorrection && startupVersions.ContainsKey(window)) startupVersions[window] = 0;
         var destination = MonitorCatalog.Resolve(mapping.Monitor, config);
         WindowPlacement.Apply(window, mapping.Layout, destination, activate: false);
     }
@@ -263,6 +341,7 @@ internal sealed class WindowActions : IDisposable
     {
         lifetime.Cancel();
         Native.UnhookWinEvent(foregroundHook);
+        Native.UnhookWinEvent(moveHook);
         lifetime.Dispose();
     }
 }

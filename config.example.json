@@ -1,6 +1,7 @@
 {
 	// Edit %LOCALAPPDATA%/Macaroni/config.json while Macaroni runs.
 	"version": 1,
+	"startupTrackingSeconds": 8,
 	"terminal": {
 		"executable": "wt.exe",
 		"process": "WindowsTerminal",

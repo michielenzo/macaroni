@@ -36,6 +36,8 @@ To additionally test real activation of an already-running Windows Terminal wind
 
 `-- --explorer-restore` opens four temporary Explorer folders and checks minimized restoration, repeated placement, window stacking above the previous application, and dedicated focus. It closes only its test windows afterward. `-- --workspace-test` uses temporary test forms to check placement, focus, and dedicated assignment transfers.
 
+`-- --startup-layout-test` verifies delayed maximize correction and cancellation for manual movement, minimization, and a newer shortcut. `-- --postman-startup` requires Postman to be closed; it launches the installed app and verifies that the bottom-left layout survives startup. This leaves Postman open afterward.
+
 To uninstall, turn off **Start with Windows**, exit from the tray, and remove the published folder. User settings remain in `%LOCALAPPDATA%\Macaroni` until you remove them.
 
 ### Continuous integration
