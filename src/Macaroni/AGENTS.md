@@ -2,6 +2,8 @@
 
 The tray owns the WinForms message loop and application lifetime. Keyboard callbacks only decide whether to suppress input and queue actions; never perform I/O or wait in a callback. KeyPolicy maintains a press/release decision across state changes.
 
+Ctrl + physical numpad 0 toggles enabled state only with Num Lock off, including when Macaroni is disabled. Plain numpad 0 passes through. Every toggle requires an explicit source reason and writes the previous/new state to macaroni.log outside the hook callback. Log startup state restoration too; optional window diagnostics must not gate state logging.
+
 WindowActions runs on the UI STA thread because Explorer automation uses COM. Await window creation without blocking the message loop. Keep matching scoped to the configured process. Configuration replacements must be validated before becoming active.
 
 Use Native for Win32 interop. Document API-specific behavior and keep pure decision logic independently testable.

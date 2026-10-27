@@ -47,7 +47,9 @@ internal sealed class TrayApplication : ApplicationContext
         _ = dispatcher.Handle;
         bool firstRun = !File.Exists(ConfigPath);
         if (firstRun) File.Copy(System.IO.Path.Combine(AppContext.BaseDirectory, "config.example.json"), ConfigPath);
-        enabled = !File.Exists(StatePath) || File.ReadAllText(StatePath).Trim() != "false";
+        bool hasSavedState = File.Exists(StatePath);
+        enabled = !hasSavedState || File.ReadAllText(StatePath).Trim() != "false";
+        LogState(hasSavedState ? "startup: restored enabled.txt" : "startup: default enabled state");
         var menu = new ContextMenuStrip();
         menu.Items.Add(toggle);
         menu.Items.Add(dedicatedMenu);
@@ -58,11 +60,11 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add("Show monitor identities", null, (_, _) => ShowMonitors());
         menu.Items.Add(startup);
         menu.Items.Add("Open logs", null, (_, _) => Open(directory));
-        menu.Items.Add("Exit", null, (_, _) => ExitThread());
-        toggle.Click += (_, _) => Toggle();
+        menu.Items.Add("Exit", null, (_, _) => { WriteLog("Exit requested; reason=tray menu"); ExitThread(); });
+        toggle.Click += (_, _) => Toggle("tray menu");
         startup.Click += (_, _) => { try { SetStartup(!startup.Checked); } catch (Exception ex) { Report(ex); } };
         tray = new NotifyIcon { Visible = true, ContextMenuStrip = menu };
-        tray.DoubleClick += (_, _) => Toggle();
+        tray.DoubleClick += (_, _) => Toggle("tray icon double-click");
         UpdateTray();
         LoadConfiguration();
         reload.Tick += (_, _) => { reload.Stop(); LoadConfiguration(); };
@@ -113,7 +115,7 @@ internal sealed class TrayApplication : ApplicationContext
     {
         try
         {
-            if (digit == 0) { if (!control) Toggle(notify: true); return; }
+            if (digit == 0) { if (control) Toggle("keyboard: Ctrl+Numpad0 (Num Lock off)", notify: true); return; }
             var snapshot = configuration;
             string key = digit.ToString();
             if (!enabled || !snapshot.Mappings.TryGetValue(key, out var binding)) return;
@@ -204,13 +206,15 @@ internal sealed class TrayApplication : ApplicationContext
         }
         catch (Exception ex) { Report(ex); }
     }
-    private void Toggle(bool notify = false)
+    private void Toggle(string reason, bool notify = false)
     {
+        bool previous = enabled;
         enabled = !enabled;
+        LogState(reason, previous);
         UpdateTray();
         if (notify)
             tray.ShowBalloonTip(3500, enabled ? "Macaroni enabled" : "Macaroni disabled",
-                enabled ? "Numpad shortcuts are active." : "Numpad shortcuts are paused. Press numpad 0 with Num Lock off to enable them again.",
+                enabled ? "Numpad shortcuts are active." : "Numpad shortcuts are paused. Press Ctrl + numpad 0 with Num Lock off to enable them again.",
                 ToolTipIcon.Info);
         try
         {
@@ -276,8 +280,17 @@ internal sealed class TrayApplication : ApplicationContext
     }
     private void Report(Exception ex)
     {
-        try { File.AppendAllText(System.IO.Path.Combine(directory, "macaroni.log"), $"{DateTimeOffset.Now:O} {ex}\n"); } catch { }
+        WriteLog(ex.ToString());
         tray.ShowBalloonTip(5000, "Macaroni", ex.Message, ToolTipIcon.Warning);
+    }
+    private void LogState(string reason, bool? previous = null) => WriteLog(
+        $"State: enabled={enabled}; previous={(previous.HasValue ? previous.Value.ToString() : "unknown")}; reason={reason}");
+    private void WriteLog(string message)
+    {
+        // Always record state changes, including startup restoration, even when
+        // optional window diagnostics are off. A PID distinguishes app sessions.
+        try { File.AppendAllText(System.IO.Path.Combine(directory, "macaroni.log"), $"{DateTimeOffset.Now:O} pid={Environment.ProcessId} {message}\n"); }
+        catch { /* A log write failure must not break shortcut handling. */ }
     }
     private void WriteDiagnostic(string message)
     {
@@ -291,6 +304,7 @@ internal sealed class TrayApplication : ApplicationContext
     }
     protected override void ExitThreadCore()
     {
+        WriteLog($"Message loop exiting; enabled={enabled}");
         stopping = true;
         palette?.Close(); palette?.Dispose();
         keyboard.Dispose(); watcher.Dispose(); reload.Dispose(); actions.Dispose();

@@ -50,8 +50,8 @@ CI invokes the test executable with `dotnet run`, because this project does not 
 
 - Num Lock on: digits type normally; dedicated navigation keys are unaffected.
 - Num Lock off: 9 launches/focuses Terminal, 8 opens/reuses the home folder.
-- Hold 9: only one action. Hold 0: only one toggle. Change Num Lock while holding a key and verify no stray navigation event.
-- Disable with 0 or the tray: navigation works; 0 re-enables. Restart and confirm state is remembered.
+- Hold 9: only one action. Hold Ctrl + numpad 0: only one toggle. Plain numpad 0 passes through. Change Num Lock or release Ctrl while holding a key and verify no stray navigation event.
+- Disable with Ctrl + numpad 0 or the tray: navigation works; Ctrl + numpad 0 re-enables with Num Lock off. Restart and confirm state is remembered. Verify `macaroni.log` identifies each toggle source and the startup state.
 - Move/minimize a target, press its mapping, and confirm placement and focus.
 - Press a maximize mapping again while its window is already maximized on the target display: only focus changes, with no restore/maximize animation. Move it to another display and confirm the shortcut still brings it back.
 - Test title/recent/dedicated modes with several windows. Dedicated mode should adopt an existing window, stay with it despite focus changes, and adopt another when it closes; launch only when none remain.
@@ -63,7 +63,7 @@ CI invokes the test executable with `dotnet run`, because this project does not 
 
 ## Overview
 
-With Num Lock off, numpad 1–9 perform configurable actions. Numpad 0 enables/disables Macaroni. With Num Lock on, Macaroni leaves number-pad input unchanged. Only one instance runs per Windows session.
+With Num Lock off, numpad 1–9 perform configurable actions. Ctrl + numpad 0 enables/disables Macaroni; plain numpad 0 passes through normally. With Num Lock on, Macaroni leaves number-pad input unchanged. Only one instance runs per Windows session.
 
 ## Features
 
@@ -79,7 +79,7 @@ Use `layout` to maximize, preserve normal dimensions, fill the left/right/top/bo
 
 **See the [Configuration guide](CONFIGURATION.md) for every keyword, defaults, complete examples, window-selection strategies, monitor numbering, and troubleshooting.** The guide includes Windows Terminal, Chrome, ChatGPT, and tag-watch examples. The [example configuration](config.example.json) is the first-run template.
 
-Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; notifications identify skipped mappings. Invalid JSON or shared settings retain the last working configuration. Numpad 0 or the tray toggles remapping, and Macaroni remembers that state across restarts.
+Right-click the tray icon and choose **Open configuration** to edit your active settings. Saved changes apply automatically; notifications identify skipped mappings. Invalid JSON or shared settings retain the last working configuration. Ctrl + numpad 0 (Num Lock off) or the tray toggles remapping, and Macaroni remembers that state across restarts. Every state change and startup restoration is logged with its reason in `macaroni.log`; **Open logs** in the tray opens its folder.
 
 To switch a dedicated window, focus the desired application and press **Ctrl + its numpad key** with Num Lock off. A single matching action assigns directly; multiple matches open a styled command palette centered on the source window's monitor. You can also use **Dedicated windows → key → action → Choose window…** in the tray. Assignment leaves windows in place; the next normal shortcut applies placement.
 

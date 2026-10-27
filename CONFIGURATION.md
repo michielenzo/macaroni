@@ -102,15 +102,15 @@ The file uses JSON, with two conveniences: `// line comments`, `/* block comment
 
 Property names are case-insensitive, but use the spelling shown here. Option values such as `application`, `recent`, and `maximize` must be lowercase. Unknown property names are rejected, so a typo such as `monitro` prevents that edit from loading. Keep each property and mapping key unique. Use the documented types; do not use `null` as a substitute for leaving an optional setting out.
 
-| State | Numpad 1–9 | Numpad 0 |
-| --- | --- | --- |
-| Num Lock on | Normal numeric input | Normal numeric input |
-| Num Lock off, Macaroni enabled | Execute mapped actions; unmapped keys behave normally | Disable Macaroni |
-| Num Lock off, Macaroni disabled | Normal navigation behavior | Enable Macaroni |
+| State | Numpad 1–9 | Numpad 0 | Ctrl + numpad 0 |
+| --- | --- | --- | --- |
+| Num Lock on | Normal numeric input | Normal numeric input | Normal application behavior |
+| Num Lock off, Macaroni enabled | Execute mapped actions; unmapped keys behave normally | Normal Insert behavior | Disable Macaroni |
+| Num Lock off, Macaroni disabled | Normal navigation behavior | Normal Insert behavior | Enable Macaroni |
 
 Only keys `"1"` through `"9"` can appear in `mappings`. Key `"0"` is reserved. Remove a numbered entry to unmap it; there is no per-mapping `enabled` setting. An empty `"mappings": {}` is valid.
 
-The top-row number keys and separate navigation keys are not remapped. Holding a key triggers once per physical press. Ctrl + a dedicated mapping assigns the focused window; Ctrl + other numpad keys passes through normally (including Ctrl + 0). Other modifiers do not disable remapping. Additional presses for a mapping whose window is still being found are ignored until that action finishes.
+The top-row number keys and separate navigation keys are not remapped. Holding a key triggers once per physical press. Ctrl + numpad 0 toggles Macaroni; plain numpad 0 never toggles it. Ctrl + a dedicated mapping assigns the focused window; Ctrl + other numpad keys passes through normally. Other modifiers do not disable remapping. Additional presses for a mapping whose window is still being found are ignored until that action finishes.
 
 ## Top-level settings
 
@@ -705,11 +705,12 @@ Prefer absolute folder and working-directory paths. Relative paths depend on Mac
 - Configuration errors give the tray icon a red error symbol. Its tooltip shows enabled/disabled state plus the invalid keys (including duplicates), or “Invalid configuration file” if the file could not load. The error indicator remains when toggling Macaroni and clears after a reload with no configuration errors. Long key lists are shortened in the tooltip; the log contains full details.
 - An in-progress action keeps the settings it started with. Later presses use the new configuration.
 - The same per-key behavior applies at startup, including unknown or ambiguous Start menu names. Malformed JSON, invalid shared settings (`terminal`, `monitors`, version), or duplicate top-level properties prevent the file from loading: retain the previous configuration if running, or start with no action mappings if none has loaded yet. The previous valid configuration is retained only in memory, not as a persisted fallback.
-- Disabling Macaroni pauses shortcuts but does not stop configuration reloads. Key 0 and the tray can re-enable it.
+- Disabling Macaroni pauses shortcuts but does not stop configuration reloads. Ctrl + numpad 0 (Num Lock off) and the tray can re-enable it.
 - Enabled/disabled state is stored separately in `%LOCALAPPDATA%\Macaroni\enabled.txt` and remembered across restarts. There is no JSON keyword for it.
-- Toggling with numpad 0 shows a notification stating whether Macaroni is enabled or disabled.
+- Toggling with Ctrl + numpad 0 shows a notification stating whether Macaroni is enabled or disabled.
+- Every enable/disable change is recorded in `macaroni.log` with a timestamp, process ID, previous state, new state, and reason: keyboard shortcut, tray menu, or tray icon double-click. Startup records whether the state was restored from `enabled.txt` or defaulted to enabled. This logging is always on, independent of `--diagnostics`.
 - Automatic startup is controlled by **Start with Windows** in the tray, not by a JSON setting.
-- **Exit** stops Macaroni completely; numpad 0 cannot restart an exited application.
+- **Exit** stops Macaroni completely; Ctrl + numpad 0 cannot restart an exited application.
 
 ## Troubleshooting
 
@@ -720,7 +721,8 @@ For troubleshooting, exit Macaroni and launch `Macaroni.exe --diagnostics`. This
 | Symptom | What to check |
 | --- | --- |
 | A number types normally | Turn Num Lock off. |
-| Navigation occurs instead of an action | Enable Macaroni with numpad 0 or the tray; check the key is mapped and the file loaded successfully. |
+| Navigation occurs instead of an action | Enable Macaroni with Ctrl + numpad 0 (Num Lock off) or the tray; check the key is mapped and the file loaded successfully. |
+| Macaroni unexpectedly disabled | Read the latest `State:` entries in `macaroni.log` to identify the trigger and whether a restart restored a previously disabled state. Tray icon double-click also toggles Macaroni. |
 | Saved edits have no effect | Edit the active `config.json`, check JSON syntax and keyword spelling, then use **Reload configuration**. |
 | App runs but is never found | Verify the actual window-owning `process`, not just the launcher's name. |
 | No matching window after 15 seconds | Check `process`, exact `title`, launch arguments, or whether the application starts too slowly. |
