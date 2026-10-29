@@ -34,6 +34,10 @@ dotnet run --project tests/Macaroni.WindowsSmoke
 
 To additionally test real activation of an already-running Windows Terminal window, append `-- --focus-terminal`. This intentionally focuses Terminal. Activation verifies the actual foreground handle. If the normal request fails and no modifier is held, it retries after a balanced Ctrl-masked Alt tap to unlock foreground activation without opening an application menu. Injected events are ignored by Macaroni's keyboard hook.
 
+If a grouped taskbar preview blocks activation, Macaroni briefly activates its taskbar owner so Windows dismisses the preview, then focuses the requested window. Recognition requires a known preview class on the taskbar's own process and UI thread. Recovery attempts and outcomes are always written to `macaroni.log`. New shortcuts, dedicated-assignment shortcuts, and enable/disable changes supersede pending focus recovery and final workspace presentation from older requests.
+
+`-- --focus-taskbar-test` waits up to 60 seconds for you to open a grouped taskbar preview, dismisses it using the production focus code, and verifies focus on a temporary test window. No reply or extra shortcut is needed. `-- --focus-safety-test` checks that ordinary dialogs remain open, receive no Escape, and superseded requests stop before recovery. These tests close only their own temporary windows.
+
 `-- --explorer-restore` opens four temporary Explorer folders and checks minimized restoration, repeated placement, window stacking above the previous application, and dedicated focus. It closes only its test windows afterward. `-- --workspace-test` uses temporary test forms to check placement, focus, and dedicated assignment transfers.
 
 `-- --startup-layout-test` verifies delayed maximize correction and cancellation for manual movement, minimization, and a newer shortcut. `-- --postman-startup` requires Postman to be closed; it launches the installed app and verifies that the bottom-left layout survives startup. This leaves Postman open afterward.

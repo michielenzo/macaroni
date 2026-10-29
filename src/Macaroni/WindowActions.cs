@@ -8,6 +8,7 @@ namespace Macaroni;
 internal sealed class WindowActions : IDisposable
 {
     internal Action<string>? Diagnostics { get; set; }
+    internal Action<string>? FocusLog { get; set; }
     internal static string WindowState(nint window) => $"hwnd=0x{window:X}, exists={Native.IsWindow(window)}, visible={Native.IsWindowVisible(window)}, minimized={Native.IsIconic(window)}, maximized={Native.IsZoomed(window)}, foreground=0x{Native.GetForegroundWindow():X}";
     private readonly Dictionary<nint, long> recent = new();
     private readonly DedicatedWindows dedicated = new();
@@ -63,7 +64,8 @@ internal sealed class WindowActions : IDisposable
         if (mapping.Focus && window != 0) await Focus(window);
         await WaitForStartup([key]);
     }
-    internal Task Focus(nint window) => ForegroundActivation.Focus(window, lifetime.Token);
+    internal Task Focus(nint window) => ForegroundActivation.Focus(window, lifetime.Token, FocusLog);
+    internal Task Focus(nint window, Func<bool> isCurrent) => ForegroundActivation.Focus(window, lifetime.Token, FocusLog, isCurrent);
     internal async Task<nint> ExecuteAction(string key, Mapping mapping, Configuration config, IReadOnlySet<nint> excluded)
     {
         if (!busy.Add(key)) return 0;

@@ -716,6 +716,10 @@ Prefer absolute folder and working-directory paths. Relative paths depend on Mac
 
 Use **Open logs** in the tray to open the settings folder, then read `macaroni.log`. Notifications summarize launch, configuration, placement, and focus errors.
 
+When a grouped taskbar preview prevents an action with `focus: true` from activating, Macaroni briefly activates the preview's taskbar owner to dismiss it, then retries your application's focus. This applies only to recognized previews on the taskbar's process and UI thread; ordinary application dialogs are not dismissed. Held modifiers or mouse buttons delay recovery briefly. A newer shortcut or an enable/disable change supersedes older pending focus recovery. No configuration setting is needed.
+
+Focus recovery always logs the target and foreground window classes, process/thread IDs, taskbar handoff, and success or failure in `macaroni.log`; `--diagnostics` is not required.
+
 For troubleshooting, exit Macaroni and launch `Macaroni.exe --diagnostics`. This session additionally records selected window handles, minimized state, placement bounds, and foreground handles in `diagnostics.log`. It rotates at 256 KiB and retains one previous log. A normal restart disables this diagnostic mode.
 
 | Symptom | What to check |
@@ -731,5 +735,6 @@ For troubleshooting, exit Macaroni and launch `Macaroni.exe --diagnostics`. This
 | Folder shortcut opens another Explorer window | Check the path; an existing match may be in an inaccessible inactive tab. |
 | Window goes to another monitor | Check `windowsNumbers` in **Show monitor identities** and the fallback rule. Remove `monitors` overrides if you want automatic Windows numbering. |
 | Window moves but does not focus | Try with modifier keys released; Windows can still restrict activation, including across privilege boundaries. |
+| Focus fails while taskbar window previews are open | Recognized previews are dismissed automatically for `focus: true` actions. Release mouse buttons/modifiers and check `Taskbar preview:` / `Focus recovery:` entries in `macaroni.log` if it still fails. |
 | Hidden command appears to do nothing | Run it in terminal mode and check shell/profile requirements. Macaroni does not collect command output. |
 | A setting from another example is rejected | Only the keywords in this guide are supported; there is no `enabled`, `hotkey`, `screen`, or `fullscreen` field. |

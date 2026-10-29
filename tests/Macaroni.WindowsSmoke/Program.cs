@@ -10,6 +10,8 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Contains("--focus-taskbar-test")) { FocusTests.Run(taskbar: true); return; }
+        if (args.Contains("--focus-safety-test")) { FocusTests.Run(taskbar: false); return; }
         if (args.Contains("--whatsapp-reopen"))
         {
             using var host = new Form { Text="Macaroni WhatsApp reopen test" };

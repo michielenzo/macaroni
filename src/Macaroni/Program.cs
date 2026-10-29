@@ -39,6 +39,7 @@ internal sealed class TrayApplication : ApplicationContext
     internal TrayApplication()
     {
         Directory.CreateDirectory(directory);
+        actions.FocusLog = WriteLog;
         if (Environment.GetCommandLineArgs().Contains("--diagnostics"))
         {
             actions.Diagnostics = WriteDiagnostic;
@@ -110,6 +111,7 @@ internal sealed class TrayApplication : ApplicationContext
         }
     }
     private readonly WorkspaceRunner workspaces = new();
+    private long focusRequest;
     private AssignmentPalette? palette;
     private async void Dispatch(int digit, bool control, nint window)
     {
@@ -119,11 +121,16 @@ internal sealed class TrayApplication : ApplicationContext
             var snapshot = configuration;
             string key = digit.ToString();
             if (!enabled || !snapshot.Mappings.TryGetValue(key, out var binding)) return;
-            if (control) { AssignFocused(key, binding, window); return; }
+            if (control) { ++focusRequest; AssignFocused(key, binding, window); return; }
             if (workspaces.IsExecuting(key)) return;
+            long request = ++focusRequest;
+            bool IsCurrent() => !stopping && enabled && focusRequest == request;
             var reservations = actions.Reservations(key, binding);
             actions.Diagnostics?.Invoke($"Key {key}: {binding.Actions.Count} actions; reserved=" + string.Join(",", reservations.Select(p => $"{p.Key}=0x{p.Value:X}")));
-            var failures = await workspaces.Run(key, binding, (id, action, used) => actions.ExecuteAction(id, action, snapshot, used), actions.Focus, reservations, w => Native.GetForegroundWindow() != w, WindowPlacement.RaiseWorkspace, () => actions.WaitForStartup(binding.Actions.Select(a => WorkspaceRunner.ActionId(key, a))));
+            var failures = await workspaces.Run(key, binding, (id, action, used) => actions.ExecuteAction(id, action, snapshot, used),
+                w => actions.Focus(w, IsCurrent), reservations, w => IsCurrent() && Native.GetForegroundWindow() != w,
+                (windows, focus) => { if (IsCurrent()) WindowPlacement.RaiseWorkspace(windows, focus); },
+                () => actions.WaitForStartup(binding.Actions.Select(a => WorkspaceRunner.ActionId(key, a))));
             if (actions.Diagnostics != null)
                 foreach (var pair in actions.Reservations(key, binding)) actions.Diagnostics($"Key {key} completed, {pair.Key}: {WindowActions.WindowState(pair.Value)}");
             if (failures.Count > 0 && !stopping) Report(new Exception(string.Join("\n", failures)));
@@ -210,6 +217,7 @@ internal sealed class TrayApplication : ApplicationContext
     {
         bool previous = enabled;
         enabled = !enabled;
+        ++focusRequest;
         LogState(reason, previous);
         UpdateTray();
         if (notify)

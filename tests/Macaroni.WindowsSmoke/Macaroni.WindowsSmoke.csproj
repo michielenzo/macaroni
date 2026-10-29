@@ -8,6 +8,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Macaroni/TaskbarPreview.cs" Link="TaskbarPreview.cs" />
+    <Compile Include="../../src/Macaroni/TaskbarPreviewPolicy.cs" Link="TaskbarPreviewPolicy.cs" />
     <Compile Include="../../src/Macaroni/KeyBinding.cs" Link="KeyBinding.cs" />
     <Compile Include="../../src/Macaroni/WorkspaceRunner.cs" Link="WorkspaceRunner.cs" />
     <Compile Include="../../src/Macaroni/ConfigurationMigration.cs" Link="ConfigurationMigration.cs" />

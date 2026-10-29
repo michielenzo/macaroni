@@ -18,6 +18,12 @@ void Reject(string name, string json)
     catch { Check(name, true); return; }
     Check(name, false);
 }
+Check("Modern taskbar preview requires taskbar process and UI thread", TaskbarPreviewPolicy.Matches("XamlExplorerHostIslandWindow", 10, 20, 10, 20));
+Check("Classic taskbar preview is supported", TaskbarPreviewPolicy.Matches("TaskListThumbnailWnd", 10, 20, 10, 20));
+Check("Other Explorer XAML threads are not previews", !TaskbarPreviewPolicy.Matches("XamlExplorerHostIslandWindow", 10, 21, 10, 20));
+Check("Other application XAML hosts are not previews", !TaskbarPreviewPolicy.Matches("XamlExplorerHostIslandWindow", 11, 20, 10, 20));
+Check("Unrelated taskbar popups and dialogs are not previews", new[] { "#32770", "Shell_TrayWnd", "TopLevelWindowForOverflowXamlIsland", "Windows.UI.Core.CoreWindow", "" }.All(name => !TaskbarPreviewPolicy.Matches(name, 10, 20, 10, 20)));
+Check("Missing taskbar identity never authorizes dismissal", !TaskbarPreviewPolicy.Matches("XamlExplorerHostIslandWindow", 0, 20, 0, 20) && !TaskbarPreviewPolicy.Matches("XamlExplorerHostIslandWindow", 10, 0, 10, 0));
 var assignments = new Dictionary<string, string> { ["1"] = "laptop", ["2"] = "external-right", ["3"] = "external-left" };
 var partial = LoadFixture("""{"mappings":{"1":{"action":"folder","path":"C:/"},"2":{"action":"folder"},"3":{"action":"command","executable":"cmd.exe"}}}""");
 Check("Invalid mapping does not reject valid neighbours", partial.Mappings.Keys.SequenceEqual(["1", "3"]) && partial.Errors.Count == 1 && partial.Errors[0].Contains("Key 2"));
