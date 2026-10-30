@@ -15,6 +15,7 @@ Requires Windows and the .NET 10 SDK. No third-party packages are used.
 
 ```powershell
 ./build.ps1
+./install.ps1
 ./artifacts/Macaroni/Macaroni.exe
 ```
 
@@ -42,7 +43,9 @@ If a grouped taskbar preview blocks activation, Macaroni briefly activates its t
 
 `-- --startup-layout-test` verifies delayed maximize correction and cancellation for manual movement, minimization, and a newer shortcut. `-- --postman-startup` requires Postman to be closed; it launches the installed app and verifies that the bottom-left layout survives startup. This leaves Postman open afterward.
 
-To uninstall, turn off **Start with Windows**, exit from the tray, and remove the published folder. User settings remain in `%LOCALAPPDATA%\Macaroni` until you remove them.
+`./install.ps1` adds a **Macaroni** shortcut to your Windows Start menu. Search for Macaroni there to launch it manually. For a different published location, use `./install.ps1 -ApplicationDirectory C:\path\to\Macaroni`. Run it again if you move the application. Launching while Macaroni is already running is safe: only one instance runs per session. **Start with Windows** runs at sign-in; it does not relaunch a stopped application when resuming from sleep or unlocking Windows.
+
+To uninstall, turn off **Start with Windows**, exit from the tray, remove the Macaroni shortcut from your Start menu Programs folder (`shell:programs`), and remove the published folder. User settings remain in `%LOCALAPPDATA%\Macaroni` until you remove them.
 
 ### Continuous integration
 
